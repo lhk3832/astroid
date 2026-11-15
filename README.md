@@ -19,7 +19,8 @@ python shooter.py
 - 게임 오버 후 R: 다시 시작
 - 숨겨진 기능 2: 전투기 소개 화면에서 "Fighter N"의 이름을 N번 누르면(1번 전투기는 1번, 2번은 2번, 3번은 3번) 이름 옆에 Change 아이콘이 생기고, 그 전투기로 Change Ticket 1개를 들고 시작한다 (Back을 누르면 꺼진다). 숨겨진 기능 1(S)과 2(Change Ticket)는 함께 받을 수 없다: 하나를 켜면 다른 하나는 켜지지 않는다.
 - 숨겨진 기능 1: 첫 화면이나 전투기 고르기 화면에서 "My best Score" 칸을 7번 클릭하면(`SECRET_CLICKS`) 칸 오른쪽에 무지개 폭탄 표시가 생기고, 다음 게임을 S 1개를 들고 시작한다 (한 번만 적용).
-- 첫 화면: 게임을 켜면 제목 아래에 큰 일반 비행기(1번 전투기), 난이도 버튼 Easy / Normal / Hard, 깜빡이는 "Press To Start" 바, "My best Score" 칸이 나온다 (바와 칸은 버튼 줄과 같은 길이). 버튼을 누르거나 ← → 키로 난이도를 고르고(기본은 Normal), 그 밖의 아무 키나 클릭(최고 점수 칸 제외)하면 전투기 고르기 화면으로 간다. 최고 점수는 난이도마다 따로 저장된다. "My best Score" 칸을 한 번 누르면 모드별 최고 기록 화면(Best Records)이 열린다: 모드별 점수, 전투기 종류(Normal/Tanker/Attack), 레벨, 플레이 시간, 날짜 (기록이 없으면 "-"). 빠르게(각 클릭 0.35초 이내) 7번 누르면 대신 숨겨진 기능 1이 켜진다. 아무 키나 Back으로 닫는다. 일시정지 화면의 "Go to Home"도 이 화면으로 온다.
+- 이름 화면 (가장 먼저): 게임을 켜면 제목과 큰 비행기만 있고, 그 아래에 "Player's name", 이름을 입력하는 칸(클릭하면 입력할 수 있다. 한글도 입력되고 최대 12글자, Enter로 확인), 맨 아래에 "Play In Guest Mode" 버튼(이름 없이 "Guest"로 시작)이 있다. 이 화면은 게임을 켤 때 한 번만 나온다 (난이도 화면의 Back으로 돌아올 수는 있다).
+- 첫 화면: 게임을 켜면 제목 아래에 큰 일반 비행기(1번 전투기), 난이도 버튼 Easy / Normal / Hard, 깜빡이는 "Press To Start" 바(테두리 없이 어두운 바탕만), "My best Score" 칸이 나온다 (바와 칸은 버튼 줄과 같은 길이). 왼쪽 위의 "← Back" 버튼(또는 Esc)을 누르면 이름 화면으로 돌아간다. 버튼을 누르거나 ← → 키로 난이도를 고르고(기본은 Normal), 그 밖의 아무 키나 클릭(최고 점수 칸 제외)하면 전투기 고르기 화면으로 간다. 최고 점수는 난이도마다 따로 저장된다. "My best Score" 칸을 한 번 누르면 모드별 최고 기록 화면(Best Records)이 열린다: 모드별 점수, 기록을 세운 플레이어 이름(길면 …로 줄임), 전투기 종류(Normal/Tanker/Attack), 레벨, 플레이 시간, 날짜 (기록이 없으면 "-"). 첫 화면 왼쪽 위에 지금 플레이어 이름이 작게 보인다. 빠르게(각 클릭 0.35초 이내) 7번 누르면 대신 숨겨진 기능 1이 켜진다. 아무 키나 Back으로 닫는다. 열릴 때(클릭 후 0.35초 기다림)와 같은 시간(`BEST_CLICK_DELAY`)이 닫을 때도 걸리고, 그동안 화면이 서서히 어두워진다. 일시정지 화면의 "Go to Home"도 이 화면으로 온다.
 - 전투기 고르기 화면: 먼저 비행기 3종 중 하나를 고른다 (← → / A D / 1 2 3 키, 또는 비행기를 클릭; 고른 비행기는 노란 테두리로 표시된다. 각 전투기 아래에는 이름이 적힌다: 1번 Normal, 2번 Tanker, 3번 Attack (`SHIP_NAMES`)). 전투기 위에 마우스를 올리면 그 전투기가 1.2배(`HOVER_SCALE`)로 커지고, 아래에 공격/체력/스피드가 숫자 대신 채워진 정도를 보여주는 게이지로 나타난다. 그 밖의 아무 키나 빈 곳 클릭을 하면 능력치 소개 화면이 나온다(처음에는 전투기만 크게 보이고, 마우스 휠을 위로 굴리면 공격/체력/스피드 막대가 나타나며 아래로 굴리면 다시 사라진다. Back: 다시 고르기 / Select 또는 Enter: 시작). 3초 카운트다운 뒤 게임이 시작된다 (`TITLE_COUNTDOWN`). 아래의 "My best Score" 칸에 최고 점수가 표시된다. 3,2,1 카운트다운이 시작되면 게임 이름, 최고 점수 칸, 옆의 다른 비행기는 바로 사라지고, 카운트다운이 진행되는 동안 비행기가 게임 시작 위치로 내려와 작아지며 상단 표시(점수/체력/코인/폭탄)가 서서히 나타나 게임 시작 화면과 같아진다 (게임 오버 또는 창을 닫을 때 갱신, `best_score.txt`에 저장되며 git에는 올리지 않는다). 게임 이름은 `GAME_TITLE`.
 
 게임 안 글씨(Score, Level, Missiles, 상점 등)는 모두 영어다.
@@ -42,7 +43,9 @@ python shooter.py
 - 적 1마리를 무찌를 때마다 얻는 점수는 난이도마다 다르다 (총알, 부딪힘, 폭탄 모두 같다. `MODES`의 `kill_score`): **Easy 15점, Normal 10점, Hard 10점**.
 - 노란 적은 모든 난이도에서 다른 적의 **1.5배**(`YELLOW_SCORE_MULT`)이다: Easy 22.5점(소수 그대로 표시), Normal·Hard 15점.
 - **R 보너스**: 체력이 꽉 찬 상태로 R을 3개(`R_BONUS_COUNT`) 먹을 때마다 보너스 **+100점**(`R_BONUS_POINTS`)을 받는다. 모든 난이도 공통이다. 화면에 "R Bonus +100!"이 잠깐 나온다. 체력이 모자란 채로 먹은 R은 세지 않는다.
-- 레벨, 한 번에 나오는 적 수, 적 총알 수의 증가는 점수에 묶여 있다. 단, R 보너스 점수는 점수에만 더해지고 이 난이도 증가에는 반영되지 않는다 (`bonus_total`).
+- **P 보너스**: 미사일이 최대(5개)인 상태로 P를 3개(`P_BONUS_COUNT`) 먹을 때마다 보너스 **+100점**(`P_BONUS_POINTS`)을 받는다. 모든 난이도 공통이고 "P Bonus +100!"이 잠깐 나온다. 미사일이 최대여도 P가 떨어진다.
+- 레벨, 한 번에 나오는 적 수, 적 총알 수의 증가는 점수에 묶여 있다. 단, R·P 보너스 점수는 점수에만 더해지고 이 난이도 증가에는 반영되지 않는다 (`bonus_total`).
+- **기록할 때의 점수**: 점수가 xxxx.5처럼 .5로 끝나면 최고 기록(기록 화면, 최고 점수 칸)에는 0.5를 뺀 점수로 적는다 (예: 37.5 → 37). 화면에 보이는 점수는 그대로다.
 
 ## 난이도
 
@@ -73,14 +76,14 @@ python shooter.py
 - 점수 150점마다 레벨 상승: 적이 더 자주, 빠르고, 단단하게 나온다.
 - 적은 모두 비행기 이미지로 그려진다 (`assets/red_enemy.png`, `green_enemy.png`, `yellow_enemy.png`, 크기 `ENEMY_SPRITE_SIZE`). 이미지가 없으면 색깔 원으로 대신 그려진다.
 - 빨간 적: 내 위치를 향해 총알을 쏜다. 한 번에 쏘는 총알 수 = 내 미사일 개수. 내 미사일이 최대(5개)가 된 뒤로는 점수 100점마다 1발씩 늘어나며, 상한은 7발 (`ENEMY_MAX_COUNT`).
-- 노란 적: 내 미사일이 최대(5개)가 되면 4초마다 등장(동시에 최대 2마리, `YELLOW_SPAWN_INTERVAL`, `YELLOW_MAX`). 빠르고 체력이 높으며 빠른 총알을 1발씩 쏜다. 화면 적 수 상한(7마리)에 포함되지 않는다.
+- 노란 적: 내 미사일이 최대(5개)가 되면 4초마다 등장(동시에 최대 2마리, `YELLOW_SPAWN_INTERVAL`, `YELLOW_BULLET_SPEED`, `YELLOW_BULLET_COUNT`, `YELLOW_BULLET_SPREAD`, `YELLOW_MAX`). 빠르고 체력이 높으며, 다른 적보다 빠른 총알(`YELLOW_BULLET_SPEED` = 9, 난이도의 총알 속도 배율이 곱해진다)을 한 번에 2발(`YELLOW_BULLET_COUNT`, 9도 간격 `YELLOW_BULLET_SPREAD`) 쏜다. 화면 적 수 상한(7마리)에 포함되지 않는다.
 - 초록 적(전체의 25%): 2초 뒤 터지는 폭탄을 던진다. 빨간 원이 폭발 범위.
 
 ## 아이템 (적 처치 시 드롭)
 
 | 아이템 | 효과 | 드롭 |
 |---|---|---|
-| P (초록) | 미사일 +1 (최대 5) | 빨간 적 2%, 초록 적 10% |
+| P (초록) | 미사일 +1 (최대 5). 최대일 때 먹으면 3개마다 보너스 +100점 | 빨간 적 2%, 초록 적 10% |
 | R (분홍) | 체력 +1 (그 전투기의 현재 최대 하트까지) | 빨간 적 10%, 초록 적 5% (`HEAL_UNLOCK_PICKUPS`로 P 몇 개 뒤부터 나올지 조절, 0이면 처음부터) |
 | B (총알 모양) | 폭탄 B +1 | 1% |
 | $ (코인) | 100코인 | 빨간/초록 적 2%, 노란 적 30% (노란 적은 코인만 드롭) |
@@ -97,7 +100,7 @@ python shooter.py
 
 ## 보너스 라운드 (상점 화면 제목: "Star Market")
 
-**구매 확인 화면**: 상점에서 물건을 고르면 바로 사지 않고 새 화면이 나온다. 맨 위에 "Buy (물건 이름)?", 그 아래 큰 물건 그림, 그 아래 물건의 특징 설명(영어, `ITEM_DESC`), 가격과 가진 코인, 맨 아래에 **Back**(상점으로)과 **Buy**(구매) 버튼이 있다. 코인이 모자라거나 이미 최대라 못 사면 화면에 남아서 이유가 나온다. 사면 상점으로 돌아가 "(이름) purchased!"가 보인다.
+**구매 확인 화면**: 상점에서 물건을 고르면 바로 사지 않고 새 화면이 나온다. 맨 위에 "Buy (물건 이름)?", 그 아래 큰 물건 그림, 그 아래 물건의 특징 설명(영어, `ITEM_DESC`), 가격과 가진 코인, 맨 아래에 **Back**(상점으로)과 **Buy**(구매) 버튼이 있다. 코인이 모자라거나 이미 최대라 못 사면 화면에 남아서 이유가 나온다. 사면 상점으로 돌아가 "(이름) purchased!"가 보이고, 하트를 사면 "Hearts 4/4"처럼 현재/최대 하트도 같이 나온다. 상점 화면 위쪽(코인 옆)과 하트 관련 확인 화면에도 현재 하트(현재/최대)가 표시된다.
 
 상점 카드의 하트(Max Heart +1, Full Heal), 보호막(Shield 10s), 티켓(Change Ticket)은 그림(`assets/item_heart.png`, `item_shield.png`, `item_change.png`)으로 표시된다. Change Ticket 그림은 왼쪽 위 개수 표시와 전투기 소개 화면의 숨겨진 기능 표시에도 쓰인다.
 
@@ -119,7 +122,7 @@ python shooter.py
 
 ## 조정용 상수 (shooter.py 상단)
 
-`GAME_TITLE`, `BEST_CLICK_DELAY`, `MODES`, `YELLOW_SCORE_MULT`, `R_BONUS_COUNT`, `R_BONUS_POINTS`, `SPLASH_SPRITE_SIZE`, `ENEMY_SPRITE_SIZE`, `PLAYER_SPRITE_SIZE`, `TITLE_SPRITE_SIZE`, `FADE_FRAMES`, `TITLE_COUNTDOWN`, `WINDOW_SCALE`, `MAX_ENEMIES`, `YELLOW_SPAWN_INTERVAL`, `YELLOW_MAX`, `SPAWN_SCORE`, `GREEN_RATE`, `START_POWER`, `MAX_POWER`, `HP_CAP`, `SHIP_STATS`, `INVULN_TIME`, `BULLET_RADIUS`,
+`GAME_TITLE`, `BEST_CLICK_DELAY`, `MODES`, `YELLOW_SCORE_MULT`, `R_BONUS_COUNT`, `R_BONUS_POINTS`, `P_BONUS_COUNT`, `P_BONUS_POINTS`, `SPLASH_SPRITE_SIZE`, `ENEMY_SPRITE_SIZE`, `PLAYER_SPRITE_SIZE`, `TITLE_SPRITE_SIZE`, `FADE_FRAMES`, `TITLE_COUNTDOWN`, `WINDOW_SCALE`, `MAX_ENEMIES`, `YELLOW_SPAWN_INTERVAL`, `YELLOW_MAX`, `SPAWN_SCORE`, `GREEN_RATE`, `START_POWER`, `MAX_POWER`, `HP_CAP`, `SHIP_STATS`, `INVULN_TIME`, `BULLET_RADIUS`,
 `ENEMY_MAX_COUNT`, `ENEMY_SCALE_SCORE`, `BOMB_FUSE`, `BOMB_RADIUS`,
 `RED_DROP_RATES`, `GREEN_DROP_RATES`, `HEAL_UNLOCK_PICKUPS`, `B_START`, `B_DROP_RATE`, `B_RADIUS`,
 `S_UNLOCK_COUNT`, `S_DROP_RATE`, `S_HOLD_FRAMES`, `S_LATE_DROP_RATE`, `S_WITH_B_FACTOR`, `BLAST_RADIUS`,
