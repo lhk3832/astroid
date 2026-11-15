@@ -1,3 +1,5 @@
+import datetime
+import json
 import math
 import os
 import random
@@ -9,8 +11,9 @@ W, H = 800, 600
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BEST_FILE = os.path.join(BASE_DIR, "best_score.txt")  # 최고 점수 저장 파일
 ENEMY_SPRITE_SIZE = 44  # 적 이미지의 크기(px)
-PLAYER_SPRITE_SIZE = 60  #내 비행기 이미지의 크기(px). 충돌 범위는 그대로
-TITLE_SPRITE_SIZE = 130  # 타이틀 화면의 내 비행기 크기(px)
+PLAYER_SPRITE_SIZE = 72  #내 비행기 이미지의 크기(px). 충돌 범위는 그대로
+SPLASH_SPRITE_SIZE = 210 # 첫 화면의 큰 비행기 크기(px)
+TITLE_SPRITE_SIZE = 130 # 타이틀 화면의 내 비행기 크기(px)
 FADE_FRAMES = 60        # 보너스 라운드로 가기 전에 적이 사라지는 데 걸리는 시간(프레임)
 GAME_TITLE = "Asteroid"  # 타이틀 화면과 창 제목에 쓰이는 게임 이름
 TITLE_COUNTDOWN = 3        # 아무 버튼이나 누른 뒤 게임이 시작되기까지의 시간(초)
@@ -28,17 +31,34 @@ ENEMY_SCALE_SCORE = 100
 START_POWER = 2
 HEAL_UNLOCK_PICKUPS = 0  # P를 이만큼 먹은 뒤부터 R이 나옴 (0이면 처음부터)
 HP_CAP = 8  # 상점에서 하트를 늘려도 넘을 수 없는 절대 상한 (R 아이템/회복은 그 전투기의 현재 최대 하트까지만)
+SHIP_NAMES = ["Normal", "Tanker", "Attack"]  # 고르기 화면에서 전투기 아래에 보이는 이름
 SHIP_STATS = [(3, 3, 3), (2, 5, 2), (5, 2, 5)]  # 비행기 1~3번의 (공격, 체력, 스피드)
 SPAWN_SCORE = 100  # 이 점수를 얻을 때마다 한 번에 나오는 적이 1마리씩 늘어남
 GREEN_RATE =0.25
 BOMB_FUSE = 2 * FPS
 BOMB_RADIUS = 70
 S_UNLOCK_COUNT = 5  # 적 미사일이 이 개수 이상이면 S 아이템이 나옴
-S_DROP_RATE = 0.20        # 적 미사일이 정확히 S_UNLOCK_COUNT개일 때
-S_LATE_DROP_RATE = 0.04   # 그 이후(더 늘어난 뒤)
+S_DROP_RATE = 0.20 / 3    # 적 미사일이 정확히 S_UNLOCK_COUNT개일 때 (약 6.7%)
+S_LATE_DROP_RATE = 0.02 / 3  # 그 이후(더 늘어난 뒤) (약 0.67%)
 S_WITH_B_FACTOR = 0.25    # B를 가지고 있을 때 S 드롭 확률에 곱하는 비율 (0.25 = B가 있으면 1/4로 줄어듦)
-BLAST_RADIUS = 300
+BLAST_RADIUS = 600  # S 폭발 반경 (B의 4배, 화면 대부분을 덮는다)
+R_BONUS_COUNT = 3     # 체력이 꽉 찬 상태로 R을 이만큼 먹으면
+R_BONUS_POINTS = 100  # 이만큼 보너스 점수 (적이 늘어나는 난이도에는 반영하지 않는다)
+S_HOLD_FRAMES = FPS // 2  # S는 오른쪽 마우스 버튼을 이만큼(0.5초) 꾹 눌러야 발동한다
 ENEMY_MAX_COUNT = 7  # 적 미사일 상한
+MODES = {  # 맨 앞 화면에서 고르는 난이도. Normal이 우리가 처음부터 만들어 온 기본 규칙이다
+    "Easy": dict(spawn_mult=1.4, max_enemies=5, enemy_speed=0.8, enemy_hp_bonus=0,
+                 bullet_speed=3.2, enemy_max_count=5, drop_mult=1.5, kill_score=15),
+    "Normal": dict(spawn_mult=1.0, max_enemies=MAX_ENEMIES, enemy_speed=1.0, enemy_hp_bonus=0,
+                   bullet_speed=4.0, enemy_max_count=ENEMY_MAX_COUNT, drop_mult=1.0, kill_score=10),
+    "Hard": dict(spawn_mult=0.75, max_enemies=9, enemy_speed=1.25, enemy_hp_bonus=1,
+                 bullet_speed=5.0, enemy_max_count=9, drop_mult=0.7, kill_score=10),
+}
+YELLOW_SCORE_MULT = 1.5  # 노란 적은 다른 적 점수의 1.5배
+# spawn_mult: 적이 나오는 간격에 곱함 / max_enemies: 동시에 나올 수 있는 적 / enemy_speed: 적 속도에 곱함
+# enemy_hp_bonus: 적 체력에 더함 / bullet_speed: 적 총알 속도 / enemy_max_count: 적이 한 번에 쏘는 총알 수 상한
+# drop_mult: P/R/B 아이템 드롭률에 곱함 (코인과 S는 그대로) / kill_score: 적 1마리를 무찌를 때 얻는 점수
+game_mode = "Normal"  # 지금 고른 난이도
 B_START = 3          # 처음 가지고 있는 폭탄 B 개수
 B_RADIUS = 150
 
@@ -46,7 +66,8 @@ B_DROP_RATE = 0.01  # 적 처치 시 B 아이템이 나올 확률
 COIN_DROP_RATE = 0.02         # 빨간/초록 적 처치 시 코인 아이템이 나올 확률
 YELLOW_COIN_DROP_RATE = 0.3   # 노란 적 처치 시 코인 아이템이 나올 확률 (노란 적은 코인만 떨어뜨림)
 MAGNET_RADIUS = 60  # 이 거리 안에 들어온 아이템은 나에게 빨려 들어옴
-MAGNET_SPEED = 5
+MAGNET_ACCEL = 0.9      # 자석에 끌릴 때의 가속(px/프레임²). 가까울수록 최대 2배
+MAGNET_MAX_SPEED = 14   # 끌려오는 속도의 상한(px/프레임)
 COIN_VALUE = 100      # 코인 아이템 1개가 주는 코인
 BONUS_INTERVAL = 45    #보너스 라운드(상점)가 열리는 간격(초, 플레이 시간 기준)
 SHOP_SLOTS = 3  # 상점에는 한 번에 물건이 3개만 나온다
@@ -72,11 +93,18 @@ UNAVAILABLE_MSG = {     # 이미 최대라서 살 수 없을 때 보여주는 �
 SHOP_CARDS = [pygame.Rect(40 + i * 250, 190, 220, 210) for i in range(3)]
 SHOP_CHANGE = pygame.Rect(W // 2 - 230, 450, 220, 50)    # 상점 아래의 "Change" 버튼 (Change Ticket을 써서 물건을 바꾼다)
 SHOP_CONTINUE = pygame.Rect(W // 2 + 10, 450, 220, 50)
+CONFIRM_BACK = pygame.Rect(W // 2 - 210, 525, 180, 50)  # 구매 확인 화면의 Back 버튼
+CONFIRM_BUY = pygame.Rect(W // 2 + 30, 525, 180, 50)    # 구매 확인 화면의 Buy 버튼
 STATS_TITLE = pygame.Rect(W // 2 - 190, 45, 380, 70)       # 능력치 소개 화면의 "Fighter N" 이름. 숨겨진 기능의 클릭 자리
 HOVER_SCALE = 0.2  # 타이틀에서 전투기에 마우스를 올렸을 때 더 커지는 비율(0.2 = 1.2배)
 SHOP_TITLE = "Star Market" # 보너스 라운드 상점 화면의 제목
 SECRET_CLICKS = 7           # 타이틀의 최고 점수 칸을 이만큼 클릭하면 S를 들고 시작
-BEST_BOX = pygame.Rect(0, 0, 360, 46)
+MODE_BUTTONS = [pygame.Rect(W // 2 - 215 + i * 150, 392, 130, 42) for i in range(3)]  # 첫 화면의 Easy / Normal / Hard 버튼 (가로 430px)
+PRESS_BAR = pygame.Rect(W // 2 - 215, 448, 430, 60)  # 첫 화면의 "Press To Start" 바: 모드 버튼 줄과 같은 길이
+RECORDS_BACK = pygame.Rect(W // 2 - 90, 505, 180, 50)  # 기록 화면의 Back 버튼
+BEST_CLICK_DELAY = 350  # 최고 점수 칸을 누르고 이만큼(ms) 더 안 누르면 기록 화면이 열린다 (빨리 SECRET_CLICKS번 누르는 숨겨진 기능 때문)
+MODE_COLORS = {"Easy": (90, 210, 120), "Normal": (110, 170, 255), "Hard": (255, 100, 100)}
+BEST_BOX = pygame.Rect(0, 0, 430, 46)  # 모드 버튼 줄과 같은 길이
 BEST_BOX.center = (W // 2, H - 55)  # 타이틀의 최고 점수 칸
 STATS_BACK = pygame.Rect(W // 2 - 210, 500, 180, 50)    # 능력치 소개 화면의 Back 버튼
 STATS_SELECT = pygame.Rect(W // 2 + 30, 500, 180, 50)   # 능력치 소개 화면의 Select 버튼
@@ -103,6 +131,8 @@ font = pygame.font.SysFont("malgungothic", 24)
 big = pygame.font.SysFont("malgungothic", 56, bold=True)
 title_font = pygame.font.SysFont("malgungothic", 84, bold=True)
 small_font = pygame.font.SysFont("malgungothic", 18)
+mid_font = pygame.font.SysFont("malgungothic", 30, bold=True)
+press_font = pygame.font.SysFont("malgungothic", 46, bold=True)  # 첫 화면의 Press To Start 바 안 글씨
 
 def load_sprite(filename, size, angle=0):
     """이미지를 가장 긴 변이 size(px)가 되게 불러온다. 파일이 없으면 None (도형으로 대신 그림)."""
@@ -124,8 +154,11 @@ ENEMY_SPRITES = {
 # 고를 수 있는 내 비행기 3종 (1, 2, 3번). 게임 안(작게)과 타이틀 화면(크게)용
 PLAYER_SPRITES = [load_sprite(f"player_{i}.png", PLAYER_SPRITE_SIZE) for i in (1, 2, 3)]
 TITLE_SPRITES = [load_sprite(f"player_{i}.png", TITLE_SPRITE_SIZE) for i in (1, 2, 3)]
+SPLASH_SPRITE = load_sprite("player_1.png", SPLASH_SPRITE_SIZE)  # 첫 화면의 큰 일반 비행기(1번)
+EXPLOSION_SPRITE = load_sprite("explosion.png", 208)  # 적 전투기가 폭발할 때의 그림(원본 크기, 그릴 때 크기를 바꾼다)
 selected_ship = 0  # 타이틀에서 고른 비행기 번호(0~2)
 start_with_s = False  # 타이틀의 숨겨진 기능으로 켜지면 다음 게임을 S 1개와 함께 시작
+secret_clicks = 0  # 첫 화면/고르기 화면에서 최고 점수 칸을 클릭한 횟수 (숨겨진 기능 S)
 start_with_change = False  # 능력치 화면의 숨겨진 기능으로 켜지면 다음 게임을 Change Ticket 1개와 함께 시작
 
 
@@ -135,31 +168,146 @@ def fade_color(color, alpha):
     return tuple(int(bg[i] + (color[i] - bg[i]) * alpha) for i in range(3))
 
 
+def empty_record():
+    return {"score": 0, "date": "", "ship": "", "level": 0, "time": 0}
+
+
+def num(v):
+    """저장된 점수를 읽는다: 소수가 없으면 정수로 (22.5 같은 점수는 그대로)."""
+    f = float(v)
+    return int(f) if f == int(f) else f
+
+
 def load_best():
+    """모드별 최고 기록 {"Easy": {...}, "Normal": {...}, "Hard": {...}}. 기록 하나는 점수/날짜/전투기/레벨/플레이 시간(초).
+    예전 파일(점수 숫자 하나, 또는 모드별 점수 숫자)도 읽는다."""
+    best = {name: empty_record() for name in MODES}
     try:
         with open(BEST_FILE, encoding="utf-8") as f:
-            return int(f.read().strip())
-    except (OSError, ValueError):
-        return 0
+            data = json.loads(f.read().strip())
+        if isinstance(data, dict):
+            for name in best:
+                v = data.get(name)
+                if isinstance(v, dict):
+                    for key in best[name]:
+                        if key in v:
+                            best[name][key] = v[key]
+                    best[name]["score"] = num(best[name]["score"])
+                elif v is not None:
+                    best[name]["score"] = num(v)
+        else:
+            best["Normal"]["score"] = num(data)
+    except (OSError, ValueError, TypeError):
+        pass
+    return best
 
 
-best_score = load_best()
+best_scores = load_best()
 
 
-def save_best(score):
-    global best_score
-    if score > best_score:
-        best_score = score
+def save_best(score, level=0, seconds=0):
+    """현재 모드의 최고 기록을 갱신하고 파일에 저장한다 (점수, 오늘 날짜, 고른 전투기, 레벨, 플레이 시간)."""
+    rec = best_scores[game_mode]
+    if score > rec["score"]:
+        rec.update(score=score, date=datetime.date.today().isoformat(), ship=SHIP_NAMES[selected_ship],
+                   level=level, time=int(seconds))
         try:
             with open(BEST_FILE, "w", encoding="utf-8") as f:
-                f.write(str(best_score))
+                json.dump(best_scores, f)
         except OSError:
             pass  # 저장하지 못해도 게임은 계속한다
 
 
+def bullet_hits(en, b):
+    """내 총알 b가 적 en의 그림에 맞았는가. 그림이 옆으로 넓어서(날개) 원이 아니라 그림 크기의 직사각형으로 판정한다."""
+    return (abs(en.pos.x - b[0].x) < ENEMY_SPRITE_SIZE * 0.5 + b[1]
+            and abs(en.pos.y - b[0].y) < ENEMY_SPRITE_SIZE * 0.45 + b[1])
+
+
+def fmt_score(x):
+    """점수 표시: 정수면 그대로, 22.5처럼 소수가 있으면 소수 첫째 자리까지."""
+    return str(int(x)) if x == int(x) else f"{x:.1f}"
+
+
+def kill_points(en):
+    """적 en을 무찔렀을 때 얻는 점수. 난이도의 kill_score(Easy 15, Normal·Hard 10)이고, 노란 적은 그 1.5배(22.5는 소수 그대로)."""
+    base = MODES[game_mode]["kill_score"]
+    if not en.yellow:
+        return base
+    v = base * YELLOW_SCORE_MULT
+    return int(v) if v == int(v) else v
+
+
+def move_item(it, player):
+    """아이템 한 개를 한 프레임 움직인다. 아이템은 [위치, 종류, 속도, 끌리는 중인가].
+    평소에는 천천히 떨어지다가 내 주변(MAGNET_RADIUS)에 들어오면 자석에 붙듯 끌리기 시작한다.
+    한 번 끌리기 시작한 아이템은 내가 멀리 도망가도 거리와 상관없이 계속 따라와서 결국 붙는다
+    (끌리는 속도의 상한 MAGNET_MAX_SPEED가 내 이동 속도 상한보다 빨라서 놓치지 않는다)."""
+    while len(it) < 4:
+        it.append(pygame.Vector2(0, 0) if len(it) == 2 else False)  # it[2]: 끌릴 때의 속도, it[3]: 끌리는 중인가
+    vel = it[2]
+    to_player = player.pos - it[0]
+    dist = to_player.length()
+    if not it[3] and 0 < dist < MAGNET_RADIUS:
+        it[3] = True  # 이제부터 계속 따라온다
+    if it[3] and dist > 0:
+        pull = max(1.0, min(2.0, 2 - dist / MAGNET_RADIUS))  # 가까울수록 세게(최대 2배), 멀어도 최소 1배
+        vel += to_player.normalize() * MAGNET_ACCEL * pull
+        if vel.length() > MAGNET_MAX_SPEED:
+            vel.scale_to_length(MAGNET_MAX_SPEED)
+        it[0] += vel
+    elif not it[3]:
+        it[0].y += 2  # 끌리기 전에는 천천히 떨어진다
+
+
+def add_fx(fx, pos, radius, life, kind="fire"):
+    """폭발 그림을 하나 더한다 (피해는 없고 보기만 하는 효과). kind: "fire"는 그려 만든 불덩이, "boom"은 폭발 이미지."""
+    fx.append([pygame.Vector2(pos), 0, life, radius, kind])
+
+
+def explode_enemy(en, particles, fx):
+    """적 전투기가 쓰러질 때의 큰 폭발: 불꽃 + 사방으로 튀는 파편."""
+    add_fx(fx, en.pos, 46, 26, "boom" if EXPLOSION_SPRITE else "fire")
+    for _ in range(18):
+        a = random.uniform(0, math.tau)
+        s = random.uniform(1.5, 6)
+        particles.append([en.pos.copy(), pygame.Vector2(math.cos(a), math.sin(a)) * s, 30])
+
+
+def draw_fx(fx):
+    """폭발 그림: 중심의 흰 섬광, 주황·노랑 불덩이, 퍼져 나가는 고리가 점점 커지며 사라진다."""
+    for pos, age, life, r, kind in fx:
+        t = age / life  # 0 → 1
+        if kind == "boom":  # 폭발 이미지: 빠르게 커지며 점점 투명해진다 (픽셀 그림이라 확대는 각진 채로)
+            height = max(2, int(r * 2.6 * (0.55 + 0.65 * t ** 0.5)))
+            width = max(2, int(height * EXPLOSION_SPRITE.get_width() / EXPLOSION_SPRITE.get_height()))
+            img = pygame.transform.scale(EXPLOSION_SPRITE, (width, height))
+            img.set_alpha(int(255 * (1 - t) ** 0.7))
+            screen.blit(img, img.get_rect(center=pos))
+            continue
+        a = int(255 * (1 - t) ** 0.6)  # 끝까지 또렷하다가 빠르게 사라진다
+        size = int(r * 3.4)
+        layer = pygame.Surface((size, size), pygame.SRCALPHA)
+        c = (size // 2, size // 2)
+        pygame.draw.circle(layer, (255, 90, 20, int(a * 0.9)), c, max(1, int(r * (0.4 + 0.9 * t))))   # 바깥 불꽃(주황빨강)
+        pygame.draw.circle(layer, (255, 170, 40, a), c, max(1, int(r * (0.3 + 0.6 * t))))              # 안쪽 불덩이(주황)
+        pygame.draw.circle(layer, (255, 235, 120, a), c, max(1, int(r * (0.15 + 0.3 * t))))            # 속(노랑)
+        if t < 0.45:  # 첫 섬광: 흰색에서 노란빛으로 변하며 작아진다 (투명도로 줄이면 회색으로 보여서 색으로 줄인다)
+            k = t / 0.45
+            pygame.draw.circle(layer, (255, 255 - int(70 * k), 255 - int(190 * k), a), c, max(1, int(r * 0.55 * (1 - t))))
+        pygame.draw.circle(layer, (255, 220, 120, int(a * 0.8)), c, max(2, int(r * (0.55 + 1.0 * t))), 3)  # 퍼지는 고리
+        screen.blit(layer, (pos.x - size / 2, pos.y - size / 2))
+
+
 def draw_bomb_icon(center, rainbow=False, r=11, surf=None):
+    """폭탄 아이콘: 검은 폭탄(B) 또는 무지개 폭탄(S) 이미지. center는 폭탄 몸통의 중심, r은 몸통 반지름.
+    이미지가 없으면 도형으로 대신 그린다."""
     surf = screen if surf is None else surf
     cx, cy = center
+    icon = item_icon("bomb_rainbow" if rainbow else "bomb", int(r * 3.2))
+    if icon:  # 이미지에서 몸통 중심은 가로 46%, 세로 65% 지점 (심지와 불꽃이 위쪽에 있다)
+        surf.blit(icon, (cx - icon.get_width() * 0.46, cy - icon.get_height() * 0.65))
+        return
     for dy in range(-r, r + 1):
         hw = int(math.sqrt(r * r - dy * dy))
         color = RAINBOW[(dy + r) * len(RAINBOW) // (2 * r + 1)] if rainbow else (50, 50, 62)
@@ -176,9 +324,24 @@ def draw_coin_icon(center, r=11, surf=None):
     pygame.draw.circle(surf, (200, 150, 20), center, r - 5, 2)
 
 
+_icon_cache = {}
+
+
+def item_icon(name, size):
+    """상점 물건 그림(assets/item_{name}.png)을 가장 긴 변이 size(px)가 되게 돌려준다. 파일이 없으면 None."""
+    key = (name, size)
+    if key not in _icon_cache:
+        _icon_cache[key] = load_sprite(f"item_{name}.png", size)
+    return _icon_cache[key]
+
+
 def draw_change_icon(center, r=10, surf=None, color=(190, 225, 255)):
-    """Change Ticket 그림: 한 바퀴 도는 화살표."""
+    """Change Ticket 그림: 노란 티켓 이미지. 이미지가 없으면 한 바퀴 도는 화살표로 대신 그린다."""
     surf = screen if surf is None else surf
+    icon = item_icon("change", int(r * 3))
+    if icon:
+        surf.blit(icon, icon.get_rect(center=center))
+        return
     rect = pygame.Rect(0, 0, 2 * r, 2 * r)
     rect.center = center
     pygame.draw.arc(surf, color, rect, 0.7, 5.6, max(2, r // 4))
@@ -188,7 +351,7 @@ def draw_change_icon(center, r=10, surf=None, color=(190, 225, 255)):
 
 def draw_hud(surf, score, level, player):
     """게임 화면의 점수/체력/코인/폭탄 표시. 타이틀에서 게임 화면으로 넘어갈 때도 같은 걸 쓴다."""
-    surf.blit(font.render(f"Score {score}   Level {level}   Missiles {player.power}", True, (230, 230, 240)), (12, 10))
+    surf.blit(font.render(f"Score {fmt_score(score)}   Level {level}   Missiles {player.power}", True, (230, 230, 240)), (12, 10))
     x = W - 12  # 하트는 오른쪽 끝에서부터 그린다. 최대 하트까지 칸을 보여주고, 잃은 칸은 어둡게 둔다
     for i in range(player.max_hp - 1, -1, -1):
         heart = font.render("♥", True, (255, 100, 120) if i < player.hp else (70, 50, 75))
@@ -196,12 +359,12 @@ def draw_hud(surf, score, level, player):
         surf.blit(heart, (x, 10))
     draw_coin_icon((W - 138, 54), surf=surf)
     surf.blit(font.render(f"{player.coins}", True, (255, 220, 70)), (W - 118, 41))
-    draw_bomb_icon((24, 56), surf=surf)
-    surf.blit(font.render(f"× {player.b_count}", True, (255, 210, 120)), (44, 43))
-    y = 92
+    draw_bomb_icon((24, 62), surf=surf)
+    surf.blit(font.render(f"× {player.b_count}", True, (255, 210, 120)), (44, 49))
+    y = 100
     if player.has_s:
         draw_bomb_icon((24, y), rainbow=True, surf=surf)
-        surf.blit(font.render("Right Click!", True, (180, 220, 255)), (44, y - 13))
+        surf.blit(font.render("Hold Right Click!", True, (180, 220, 255)), (44, y - 13))
         y += 36
     if player.rerolls:  # Change Ticket을 가지고 있으면 개수 표시 (상점에서 사용)
         draw_change_icon((24, y), 10, surf=surf)
@@ -260,6 +423,9 @@ class Enemy:
         if yellow:  # 빠르고 단단하며, 빠른 총알을 쏜다
             self.vel = pygame.Vector2(random.choice((-1, 1)) * random.uniform(1.5, 2.5), random.uniform(2.5, 3.5))
             self.hp = 2 + level // 4
+        m = MODES[game_mode]  # 난이도에 따라 속도와 체력이 달라진다
+        self.vel *= m["enemy_speed"]
+        self.hp += m["enemy_hp_bonus"]
         self.shoot = random.randint(60, 150)
 
     def update(self):
@@ -328,6 +494,8 @@ def drop_items(en, player, enemy_count, items):
             items.append([en.pos.copy(), "C"])
         return
     p_rate, r_rate = GREEN_DROP_RATES if en.green else RED_DROP_RATES
+    drop_mult = MODES[game_mode]["drop_mult"]  # 난이도별 아이템 드롭 배율 (Easy는 더 잘 나오고 Hard는 덜 나온다)
+    p_rate, r_rate = p_rate * drop_mult, r_rate * drop_mult
     s_rate = 0.0  # S는 적 미사일이 S_UNLOCK_COUNT개 이상이고 아직 S가 없을 때만 나온다
     if enemy_count >= S_UNLOCK_COUNT and not player.has_s:
         s_rate = S_DROP_RATE if enemy_count == S_UNLOCK_COUNT else S_LATE_DROP_RATE
@@ -341,7 +509,7 @@ def drop_items(en, player, enemy_count, items):
         items.append([en.pos.copy(), "R"])
     elif roll < p_rate + r_rate + s_rate:
         items.append([en.pos.copy(), "S"])
-    if random.random() < B_DROP_RATE:
+    if random.random() < B_DROP_RATE * drop_mult:
         items.append([en.pos.copy() + (0, 14), "B"])
     if random.random() < COIN_DROP_RATE:
         items.append([en.pos.copy() + (-14, 0), "C"])
@@ -350,21 +518,29 @@ def drop_items(en, player, enemy_count, items):
 def draw_shop_icon(kind, cx, cy):
     """상점 카드에 그리는 물건 그림."""
     if kind in ("heart", "heal"):
-        t = big.render("♥", True, (255, 100, 120))
-        screen.blit(t, t.get_rect(center=(cx, cy)))
+        heart = item_icon("heart", 72)
+        if heart:
+            screen.blit(heart, heart.get_rect(center=(cx, cy)))
+        else:
+            t = big.render("♥", True, (255, 100, 120))
+            screen.blit(t, t.get_rect(center=(cx, cy)))
         if kind == "heal":
             t = font.render("+", True, (255, 255, 255))
-            screen.blit(t, t.get_rect(center=(cx + 28, cy - 22)))
+            screen.blit(t, t.get_rect(center=(cx + 36, cy - 28)))
     elif kind == "b":
-        draw_bomb_icon((cx - 6, cy + 6), r=20)
+        draw_bomb_icon((cx - 4, cy + 14), r=26)
     elif kind == "rainbow":
-        draw_bomb_icon((cx - 6, cy + 6), rainbow=True, r=20)
+        draw_bomb_icon((cx - 4, cy + 14), rainbow=True, r=26)
     elif kind == "power":
         pygame.draw.ellipse(screen, (255, 240, 120), (cx - 22, cy - 28, 18, 56))
         pygame.draw.ellipse(screen, (255, 240, 120), (cx + 4, cy - 28, 18, 56))
     elif kind == "shield":
-        pygame.draw.circle(screen, (90, 200, 255), (cx, cy), 28, 4)
-        pygame.draw.circle(screen, (60, 130, 200), (cx, cy), 18, 2)
+        shield = item_icon("shield", 72)
+        if shield:
+            screen.blit(shield, shield.get_rect(center=(cx, cy)))
+        else:
+            pygame.draw.circle(screen, (90, 200, 255), (cx, cy), 28, 4)
+            pygame.draw.circle(screen, (60, 130, 200), (cx, cy), 18, 2)
     elif kind == "speed":
         for dx in (-14, 8):
             pygame.draw.lines(screen, (90, 210, 255), False, [(cx + dx, cy - 20), (cx + dx + 18, cy), (cx + dx, cy + 20)], 6)
@@ -373,6 +549,91 @@ def draw_shop_icon(kind, cx, cy):
             pygame.draw.ellipse(screen, (255, 240, 120), (cx + dx - 6, cy - 24 + (i % 2) * 14, 12, 34))
     elif kind == "change":
         draw_change_icon((cx, cy), 26)
+
+
+ITEM_DESC = {  # 구매 확인 화면에 보여줄 물건 설명 (영어)
+    "heart": f"Adds 1 to your maximum hearts and restores 1 HP right away. The upper limit is {HP_CAP} hearts.",
+    "heal": "Restores your HP up to your current maximum hearts.",
+    "b": f"Gives you 1 Bomb B. Right-click to blast the enemies and bullets near you (radius {B_RADIUS}).",
+    "power": f"Adds 1 missile to every shot you fire (up to {MAX_POWER} missiles).",
+    "shield": f"Makes you invincible for {SHIELD_TIME // FPS} seconds. Bullets, bombs and collisions cannot hurt you.",
+    "speed": f"Your fighter moves 1 step faster (up to speed {MAX_SPEED}).",
+    "rapid": f"Fires faster: the delay between shots drops by 1 frame (minimum {MIN_FIRE_DELAY}).",
+    "rainbow": f"Gives you 1 Rainbow Bomb S. Hold the right mouse button for {S_HOLD_FRAMES / FPS:g} seconds to unleash a huge blast (radius {BLAST_RADIUS}).",
+    "change": "A ticket that changes the items in this shop. Press the Change button (or C) to get a new set of items.",
+}
+
+
+def wrap_text(text, fnt, width):
+    """공백 기준으로 줄을 바꿔서 각 줄이 width(px)를 넘지 않게 나눈다."""
+    lines, line = [], ""
+    for word in text.split():
+        trial = f"{line} {word}".strip()
+        if fnt.size(trial)[0] <= width or not line:
+            line = trial
+        else:
+            lines.append(line)
+            line = word
+    if line:
+        lines.append(line)
+    return lines
+
+
+def draw_shop_icon_big(kind, cx, cy):
+    """구매 확인 화면의 큰 물건 그림."""
+    global screen
+    if kind in ("heart", "heal"):
+        heart = item_icon("heart", 150)
+        if heart:
+            screen.blit(heart, heart.get_rect(center=(cx, cy)))
+        if kind == "heal":
+            t = big.render("+", True, (255, 255, 255))
+            screen.blit(t, t.get_rect(center=(cx + 78, cy - 55)))
+    elif kind == "shield" and item_icon("shield", 150):
+        shield = item_icon("shield", 150)
+        screen.blit(shield, shield.get_rect(center=(cx, cy)))
+    elif kind == "change":
+        draw_change_icon((cx, cy), 52)
+    elif kind in ("b", "rainbow"):
+        draw_bomb_icon((cx - 6, cy + 30), rainbow=(kind == "rainbow"), r=48)
+    else:  # 도형으로 그리는 물건은 작게 그려서 크게 늘린다
+        layer = pygame.Surface((110, 110), pygame.SRCALPHA)
+        saved, screen = screen, layer
+        try:
+            draw_shop_icon(kind, 55, 55)
+        finally:
+            screen = saved
+        bigger = pygame.transform.smoothscale(layer, (190, 190))
+        screen.blit(bigger, bigger.get_rect(center=(cx, cy)))
+
+
+def draw_confirm_screen(offer, player, msg):
+    """상점에서 물건을 고르면 나오는 구매 확인 화면: 질문, 큰 그림, 설명, 가격, Back / Buy 버튼."""
+    name, price, kind = offer
+    screen.fill((10, 10, 30))
+    t = big.render(f"Buy {name}?", True, (255, 220, 70))
+    screen.blit(t, t.get_rect(center=(W / 2, 65)))
+    draw_shop_icon_big(kind, W / 2, 190)
+    for i, line in enumerate(wrap_text(ITEM_DESC[kind], font, 620)):
+        t = font.render(line, True, (225, 228, 240))
+        screen.blit(t, t.get_rect(center=(W / 2, 305 + i * 30)))
+    enough = player.coins >= price
+    draw_coin_icon((W / 2 - 150, 425), r=11)
+    t = font.render(f"{price}", True, (255, 220, 70) if enough else (255, 130, 130))
+    screen.blit(t, t.get_rect(midleft=(W / 2 - 132, 425)))
+    t = font.render(f"You have {player.coins}", True, (190, 195, 215))
+    screen.blit(t, t.get_rect(midleft=(W / 2 - 30, 425)))
+    if msg:
+        t = font.render(msg, True, (255, 170, 170))
+        screen.blit(t, t.get_rect(center=(W / 2, 480)))
+    mouse = pygame.mouse.get_pos()
+    mouse = (mouse[0] / scale, mouse[1] / scale)
+    for rect, text, edge in ((CONFIRM_BACK, "Back", (150, 190, 255)), (CONFIRM_BUY, "Buy", (255, 220, 70))):
+        hover = rect.collidepoint(mouse)
+        pygame.draw.rect(screen, (70, 90, 150) if hover else (40, 50, 90), rect, border_radius=10)
+        pygame.draw.rect(screen, edge, rect, 2, border_radius=10)
+        t = font.render(text, True, (240, 245, 255))
+        screen.blit(t, t.get_rect(center=rect.center))
 
 
 STAT_COLORS = [(255, 150, 60), (255, 100, 120), (90, 210, 255)]  # 공격, 체력, 스피드 막대 색
@@ -434,10 +695,158 @@ def draw_stats_screen(ship, now):
         screen.blit(t, t.get_rect(center=rect.center))
 
 
+def draw_best_box():
+    """최고 점수 칸(My best Score). 첫 화면과 전투기 고르기 화면에 똑같이 나온다. 숨겨진 기능(S)이 켜져 있으면 오른쪽에 무지개 폭탄."""
+    pygame.draw.rect(screen, (24, 28, 56), BEST_BOX, border_radius=8)
+    pygame.draw.rect(screen, (255, 220, 70), BEST_BOX, 2, border_radius=8)
+    t = font.render(f"My best Score  {fmt_score(best_scores[game_mode]['score'])}", True, (255, 240, 170))
+    screen.blit(t, t.get_rect(center=BEST_BOX.center))
+    if start_with_s:
+        draw_bomb_icon((BEST_BOX.right - 26, BEST_BOX.centery + 4), rainbow=True, r=9)
+
+
+def format_time(seconds):
+    return f"{seconds // 60}:{seconds % 60:02d}"
+
+
+def records_screen():
+    """모드별 최고 기록 화면: 점수, 전투기, 레벨, 플레이 시간, 날짜. 아무 키나 Back 버튼으로 닫는다."""
+    stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
+    cols = {"mode": 50, "score": 215, "ship": 340, "level": 450, "time": 535, "date": 670}  # 각 칸의 x (mode만 왼쪽 맞춤)
+    while True:
+        for e in pygame.event.get():
+            if e.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if e.type == pygame.KEYDOWN:
+                return
+            if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                if RECORDS_BACK.collidepoint(e.pos[0] / scale, e.pos[1] / scale):
+                    return
+
+        now = pygame.time.get_ticks()
+        screen.fill((10, 10, 30))
+        for x, y, s in stars:
+            pygame.draw.circle(screen, (90, 90, 130), (x, (y + now * s // 40) % H), s)
+        t = big.render("Best Records", True, (255, 220, 70))
+        screen.blit(t, t.get_rect(center=(W / 2, 70)))
+
+        for key, label in (("mode", "Mode"), ("score", "Score"), ("ship", "Fighter"), ("level", "Level"), ("time", "Time"), ("date", "Date")):
+            t = small_font.render(label, True, (150, 155, 185))
+            screen.blit(t, (cols[key], 140) if key == "mode" else t.get_rect(center=(cols[key], 150)))
+        for i, name in enumerate(MODES):
+            y = 215 + i * 90
+            rec = best_scores[name]
+            card = pygame.Rect(30, y - 36, 740, 72)
+            color = MODE_COLORS[name]
+            pygame.draw.rect(screen, tuple(int(c * 0.18) for c in color), card, border_radius=10)
+            pygame.draw.rect(screen, color if name == game_mode else tuple(int(c * 0.55) for c in color), card, 3 if name == game_mode else 2, border_radius=10)
+            screen.blit(font.render(name, True, color), (cols["mode"], y - 14))
+            has = rec["score"] > 0  # 기록이 없으면 칸을 "-"로 둔다
+            cells = {
+                "score": (mid_font, fmt_score(rec["score"])),
+                "ship": (font, rec["ship"] if has and rec["ship"] else "-"),
+                "level": (font, f"Lv {rec['level']}" if has and rec["level"] else "-"),
+                "time": (font, format_time(rec["time"]) if has and rec["time"] else "-"),
+                "date": (font, rec["date"] if has and rec["date"] else "-"),
+            }
+            for key, (fnt, text) in cells.items():
+                t = fnt.render(text, True, (255, 240, 170) if key == "score" else (225, 228, 240))
+                screen.blit(t, t.get_rect(center=(cols[key], y)))
+
+        hover = RECORDS_BACK.collidepoint(pygame.mouse.get_pos()[0] / scale, pygame.mouse.get_pos()[1] / scale)
+        pygame.draw.rect(screen, (70, 90, 150) if hover else (40, 50, 90), RECORDS_BACK, border_radius=10)
+        pygame.draw.rect(screen, (150, 190, 255), RECORDS_BACK, 2, border_radius=10)
+        t = font.render("Back", True, (240, 245, 255))
+        screen.blit(t, t.get_rect(center=RECORDS_BACK.center))
+
+        window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
+        pygame.display.flip()
+        clock.tick(FPS)
+
+
+def splash_screen():
+    """게임을 켜면 가장 먼저 나오는 화면: 제목, 큰 일반 비행기(1번), Easy/Normal/Hard 버튼, "Press To Start", 최고 점수.
+    버튼(또는 ← →)으로 난이도를 고르고, 그 밖의 아무 키나 클릭을 하면 전투기 고르기 화면으로 간다.
+    최고 점수 칸을 누르면 모드별 최고 기록 화면이 열린다."""
+    global secret_clicks, game_mode
+    secret_clicks = 0
+    best_pending = None  # 최고 점수 칸을 누른 시각(ms). 더 안 누르면 기록 화면을 연다
+    stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
+    names = list(MODES)
+    while True:
+        for e in pygame.event.get():
+            if e.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if e.type == pygame.KEYDOWN:
+                if e.key in (pygame.K_LEFT, pygame.K_a):  # 난이도 고르기
+                    game_mode = names[max(0, names.index(game_mode) - 1)]
+                elif e.key in (pygame.K_RIGHT, pygame.K_d):
+                    game_mode = names[min(len(names) - 1, names.index(game_mode) + 1)]
+                else:
+                    return
+            if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                mouse = (e.pos[0] / scale, e.pos[1] / scale)
+                clicked = [name for name, r in zip(names, MODE_BUTTONS) if r.collidepoint(mouse)]
+                if clicked:  # 버튼을 누르면 그 난이도를 고른다
+                    game_mode = clicked[0]
+                elif BEST_BOX.collidepoint(mouse):  # 한 번 누르면 기록 화면, 빠르게 SECRET_CLICKS번 누르면 숨겨진 기능(S)
+                    best_pending = None if count_secret_click() else pygame.time.get_ticks()
+                else:
+                    return
+
+        now = pygame.time.get_ticks()
+        if best_pending is not None and now - best_pending >= BEST_CLICK_DELAY:
+            best_pending = None
+            secret_clicks = 0
+            records_screen()
+            continue
+        screen.fill((10, 10, 30))
+        for x, y, s in stars:
+            pygame.draw.circle(screen, (90, 90, 130), (x, (y + now * s // 40) % H), s)
+
+        t = title_font.render(GAME_TITLE, True, (120, 210, 255))
+        screen.blit(t, t.get_rect(center=(W / 2, 100)))
+        if SPLASH_SPRITE:
+            screen.blit(SPLASH_SPRITE, SPLASH_SPRITE.get_rect(center=(W / 2, 262 + math.sin(now / 300) * 6)))
+        mouse = pygame.mouse.get_pos()
+        mouse = (mouse[0] / scale, mouse[1] / scale)
+        for name, rect in zip(names, MODE_BUTTONS):  # Easy / Normal / Hard 버튼
+            chosen = name == game_mode
+            hover = rect.collidepoint(mouse)
+            color = MODE_COLORS[name]
+            fill = tuple(int(c * (0.45 if chosen else 0.22 if not hover else 0.32)) for c in color)
+            pygame.draw.rect(screen, fill, rect, border_radius=10)
+            pygame.draw.rect(screen, color if chosen else tuple(int(c * 0.6) for c in color), rect, 3 if chosen else 2, border_radius=10)
+            t = font.render(name, True, (255, 255, 255) if chosen else (190, 195, 215))
+            screen.blit(t, t.get_rect(center=rect.center))
+        pygame.draw.rect(screen, (24, 28, 56), PRESS_BAR, border_radius=10)  # 모드 버튼 줄과 같은 길이의 바
+        pygame.draw.rect(screen, (230, 230, 240), PRESS_BAR, 2, border_radius=10)
+        if (now // 500) % 2 == 0:  # 깜빡이는 문구
+            t = press_font.render("Press To Start", True, (230, 230, 240))
+            screen.blit(t, t.get_rect(center=PRESS_BAR.center))
+        draw_best_box()
+
+        window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
+        pygame.display.flip()
+        clock.tick(FPS)
+
+
+def count_secret_click():
+    """최고 점수 칸 클릭을 센다. SECRET_CLICKS번째에 S를 들고 시작하는 기능이 켜지고 True를 돌려준다 (Change Ticket이 켜져 있으면 못 켠다)."""
+    global secret_clicks, start_with_s
+    secret_clicks += 1
+    if secret_clicks == SECRET_CLICKS and not start_with_change:
+        start_with_s = True
+        return True  # 방금 켜졌다
+    return False
+
+
 def title_screen():
-    global selected_ship, start_with_s, start_with_change
-    secret_clicks = 0  # 최고 점수 칸을 클릭한 횟수
+    global selected_ship, start_with_s, start_with_change, secret_clicks
     name_clicks = 0    # 능력치 화면에서 전투기 이름(Fighter N)을 클릭한 횟수
+    best_pending = None  # 최고 점수 칸을 누른 시각(ms). 더 안 누르면 기록 화면을 연다
     stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
     phase = "choose"  # "choose": 비행기 고르기, "stats": 능력치 소개 화면
     hover = [0.0, 0.0, 0.0]  # 전투기마다 마우스를 올린 정도(0~1): 1.2배로 커지고 능력치 게이지가 나타난다
@@ -495,15 +904,18 @@ def title_screen():
                 clicked = [i for i, r in enumerate(slot_rects) if r.collidepoint(mouse)]
                 if clicked:  # 비행기를 클릭하면 선택, 빈 곳을 클릭하면 능력치 소개 화면으로
                     selected_ship = clicked[0]
-                elif BEST_BOX.collidepoint(mouse):  # 숨겨진 기능: 최고 점수 칸을 7번 클릭하면 S를 들고 시작
-                    secret_clicks += 1
-                    if secret_clicks >= SECRET_CLICKS and not start_with_change:
-                        start_with_s = True
+                elif BEST_BOX.collidepoint(mouse):  # 한 번 누르면 기록 화면, 빠르게 SECRET_CLICKS번 누르면 숨겨진 기능(S)
+                    best_pending = None if count_secret_click() else pygame.time.get_ticks()
                 else:
                     phase = "stats"
                     name_clicks = 0
 
         now = pygame.time.get_ticks()
+        if best_pending is not None and now - best_pending >= BEST_CLICK_DELAY:
+            best_pending = None
+            secret_clicks = 0
+            records_screen()
+            continue
         left = None if started is None else TITLE_COUNTDOWN - (now - started) / 1000
         if left is not None and left <= 0:
             return
@@ -559,20 +971,11 @@ def title_screen():
             else:
                 pygame.draw.polygon(screen, (80, 200, 255), [(cx, cy - 40), (cx - 32, cy + 32), (cx + 32, cy + 32)])
             if left is None:
-                if hover[i] > 0.02:  # 마우스를 올리면 번호/요약 대신 능력치 게이지
+                if hover[i] > 0.02:  # 마우스를 올리면 이름 대신 능력치 게이지
                     draw_hover_stats(i, slot_x[i], row_y + 98, hover[i])
-                else:
-                    if chosen:  # 고른 비행기는 번호 대신 능력치 요약
-                        atk, hp, spd = SHIP_STATS[i]
-                        label = f"ATK {atk}  HP {hp}  SPD {spd}"
-                    else:
-                        label = str(i + 1)
-                    t = font.render(label, True, (255, 220, 70) if chosen else (140, 140, 170))
+                else:  # 평소에는 전투기 이름 (고른 것은 노란색)
+                    t = font.render(SHIP_NAMES[i], True, (255, 220, 70) if chosen else (140, 140, 170))
                     screen.blit(t, t.get_rect(center=(slot_x[i], row_y + 112)))
-
-        if left is None and max(hover) < 0.02:  # 게이지가 보이는 동안에는 안내 문구를 숨긴다
-            t = font.render("Choose your Fighter", True, (170, 175, 205))
-            screen.blit(t, t.get_rect(center=(W / 2, row_y + 140)))
 
         if left is not None:
             hud = pygame.Surface((W, H), pygame.SRCALPHA)
@@ -589,13 +992,7 @@ def title_screen():
             screen.blit(t, t.get_rect(center=(W / 2, 200)))
 
         if left is None:
-            box = BEST_BOX  # 최고 점수 칸
-            pygame.draw.rect(screen, (24, 28, 56), box, border_radius=8)
-            pygame.draw.rect(screen, (255, 220, 70), box, 2, border_radius=8)
-            t = font.render(f"My best Score  {best_score}", True, (255, 240, 170))
-            screen.blit(t, t.get_rect(center=box.center))
-            if start_with_s:  # 숨겨진 기능이 켜졌다는 표시: 칸 오른쪽에 무지개 폭탄
-                draw_bomb_icon((box.right - 26, box.centery + 4), rainbow=True, r=9)
+            draw_best_box()  # 최고 점수 칸 (카운트다운 중에는 지운다)
 
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
@@ -613,14 +1010,19 @@ def main():
         start_with_change = False
     bullets, enemy_bullets, enemies, particles, items = [], [], [], [], []
     bombs, explosions = [], []
+    fx = []  # 폭발 그림(보기만 하는 효과): [위치, 나이, 수명, 반경]
     score, level, spawn = 0, 1, 0
-    max_power_score = None  # 미사일이 최대가 된 시점의 점수
+    max_power_score = None  # 미사일이 최대가 된 시점의 난이도 점수(score - bonus_total)
+    bonus_total = 0   # R 보너스로 받은 점수의 합. 점수에는 더하지만 난이도(레벨, 적 수, 적 총알 수)에는 반영하지 않는다
+    r_full, bonus_flash = 0, 0  # 체력이 꽉 찬 채로 먹은 R 개수, "+100" 안내를 보여줄 남은 프레임
     game_over = False
     paused = False
     shop, shop_msg, play_frames = False, "", 0
     shop_offers = []  # 지금 상점에 나온 물건 [(이름, 가격, 종류), ...]
+    confirm_idx = None  # 구매 확인 화면에 띄운 물건 번호 (없으면 None)
     yellow_spawn = 0
     fade = 0  # 보너스 라운드로 가기 전 적이 사라지는 중이면 남은 프레임
+    s_charging, s_charge = False, 0  # S를 꾹 눌러 충전하는 중인가, 지금까지 누른 프레임
     star_ms = 0
     stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
 
@@ -628,10 +1030,11 @@ def main():
         blast = False
         buy_idx = None
         change_req = False  # 상점의 Change 버튼(또는 C 키)을 눌렀는가
+        open_idx, do_buy = None, False  # 고른 물건을 구매 확인 화면으로 열기 / 확인 화면에서 Buy를 눌렀는가
         was_shop = shop
         for e in pygame.event.get():
             if e.type == pygame.QUIT:
-                save_best(score)  # 플레이 도중 창을 닫아도 최고 점수는 남긴다
+                save_best(score, level, play_frames // FPS)  # 플레이 도중 창을 닫아도 최고 점수는 남긴다
                 pygame.quit()
                 sys.exit()
             if e.type == pygame.MOUSEBUTTONDOWN and e.button == 3:
@@ -642,25 +1045,48 @@ def main():
                 paused = not paused
             if paused and e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                 if PAUSE_HOME.collidepoint(e.pos[0] / scale, e.pos[1] / scale):
-                    save_best(score)  # 홈으로 나가도 그때까지의 점수는 최고 점수에 반영
+                    save_best(score, level, play_frames // FPS)  # 홈으로 나가도 그때까지의 점수는 최고 점수에 반영
                     return "home"
-            if shop and e.type == pygame.KEYDOWN:
-                if pygame.K_1 <= e.key <= pygame.K_3:
-                    buy_idx = e.key - pygame.K_1
-                elif e.key == pygame.K_c:
-                    change_req = True
-                elif e.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_ESCAPE):
-                    shop = False
-            if shop and e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
-                mouse = (e.pos[0] / scale, e.pos[1] / scale)
-                if SHOP_CONTINUE.collidepoint(mouse):
-                    shop = False
-                elif SHOP_CHANGE.collidepoint(mouse):
-                    change_req = True
-                for i, card in enumerate(SHOP_CARDS):
-                    if card.collidepoint(mouse):
-                        buy_idx = i
+            if shop and confirm_idx is not None:  # 구매 확인 화면: Buy면 구매, Back이면 상점으로
+                if e.type == pygame.KEYDOWN:
+                    if e.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                        do_buy = True
+                    elif e.key in (pygame.K_ESCAPE, pygame.K_BACKSPACE):
+                        confirm_idx = None
+                elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                    mouse = (e.pos[0] / scale, e.pos[1] / scale)
+                    if CONFIRM_BUY.collidepoint(mouse):
+                        do_buy = True
+                    elif CONFIRM_BACK.collidepoint(mouse):
+                        confirm_idx = None
+            elif shop:
+                if e.type == pygame.KEYDOWN:
+                    if pygame.K_1 <= e.key <= pygame.K_3:
+                        open_idx = e.key - pygame.K_1
+                    elif e.key == pygame.K_c:
+                        change_req = True
+                    elif e.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_ESCAPE):
+                        shop = False
+                elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                    mouse = (e.pos[0] / scale, e.pos[1] / scale)
+                    if SHOP_CONTINUE.collidepoint(mouse):
+                        shop = False
+                    elif SHOP_CHANGE.collidepoint(mouse):
+                        change_req = True
+                    for i, card in enumerate(SHOP_CARDS):
+                        if card.collidepoint(mouse):
+                            open_idx = i
 
+        if not shop:
+            confirm_idx = None
+        if open_idx is not None and confirm_idx is None and open_idx < len(shop_offers):  # 물건을 고르면 바로 사지 않고 확인 화면을 연다
+            confirm_idx = open_idx
+            shop_msg = ""
+        if do_buy and confirm_idx is not None:
+            buy_idx = confirm_idx  # 아래 구매 처리가 이 번호의 물건을 산다
+
+        if paused or shop or game_over:
+            s_charging = False  # 멈추거나 끝나면 S 충전은 취소
         if was_shop and not shop:  # 다음 라운드는 처음처럼 위에서부터 적이 나타난다
             spawn = 0
             yellow_spawn = YELLOW_SPAWN_INTERVAL
@@ -675,6 +1101,7 @@ def main():
 
         if shop and buy_idx is not None and buy_idx < len(shop_offers):
             name, price, kind = shop_offers[buy_idx]
+            bought = False
             if player.coins < price:
                 shop_msg = "Not enough coins"
             elif not shop_available(kind, player):
@@ -691,7 +1118,7 @@ def main():
                 elif kind == "power":
                     player.power += 1
                     if player.power == MAX_POWER:
-                        max_power_score = score
+                        max_power_score = int(score - bonus_total)
                 elif kind == "shield":
                     player.invuln = max(player.invuln, SHIELD_TIME)
                 elif kind == "speed":
@@ -703,6 +1130,9 @@ def main():
                 elif kind == "change":
                     player.rerolls += 1
                 shop_msg = f"{name} purchased!"
+                bought = True
+            if bought:
+                confirm_idx = None  # 샀으면 상점으로 돌아간다 (못 샀으면 확인 화면에 남아서 이유를 보여준다)
 
         keys = pygame.key.get_pressed()
 
@@ -725,7 +1155,7 @@ def main():
                 b[0].y -= 11
             bullets = [b for b in bullets if b[0].y > -30]
             for it in items:
-                it[0].y += 2
+                move_item(it, player)
             fade -= 1
             if fade == 0:
                 enemies.clear()
@@ -742,15 +1172,16 @@ def main():
                 gap = 10 + 2 * BULLET_RADIUS
                 for i in range(player.power):
                     x = player.pos.x + (i - (player.power - 1) / 2) * gap
-                    bullets.append([pygame.Vector2(x, player.pos.y - 20), BULLET_RADIUS])
+                    bullets.append([pygame.Vector2(x, player.pos.y - int(PLAYER_SPRITE_SIZE * 0.33)), BULLET_RADIUS])  # 총알은 비행기 코에서 나온다
                 player.cooldown = player.fire_delay
 
             spawn -= 1
             normal_count = sum(1 for en in enemies if not en.yellow)  # 노란 적은 세지 않음
-            if spawn <= 0 and normal_count < MAX_ENEMIES:
-                for _ in range(min(1 + score // SPAWN_SCORE, MAX_ENEMIES - normal_count)):
+            m = MODES[game_mode]  # 난이도별 규칙
+            if spawn <= 0 and normal_count < m["max_enemies"]:
+                for _ in range(min(1 + int(score - bonus_total) // SPAWN_SCORE, m["max_enemies"] - normal_count)):
                     enemies.append(Enemy(level, random.random() < GREEN_RATE))
-                spawn = max(20, 70 - level * 5)
+                spawn = int(max(20, 70 - level * 5) * m["spawn_mult"])
 
             yellow_spawn -= 1
             if player.power >= MAX_POWER and yellow_spawn <= 0:  # 미사일이 최대가 되면 등장
@@ -763,19 +1194,21 @@ def main():
             bullets = [b for b in bullets if b[0].y > -30]
 
             for it in items:
-                it[0].y += 2
-                to_player = player.pos - it[0]
-                dist = to_player.length()
-                if 0 < dist < MAGNET_RADIUS:  # 가까워질수록 빨라지며 빨려 들어옴
-                    pull = MAGNET_SPEED * (1.5 - dist / MAGNET_RADIUS)
-                    it[0] += to_player.normalize() * min(pull, dist)
+                move_item(it, player)  # 떨어지거나, 자석에 끌려온다
                 if it[0].distance_to(player.pos) < 12 + player.radius:
                     if it[1] == "P":
                         if player.power < MAX_POWER:
                             player.power += 1
                             if player.power == MAX_POWER:
-                                max_power_score = score
+                                max_power_score = int(score - bonus_total)
                     elif it[1] == "R":
+                        if player.hp >= player.max_hp:  # 체력이 꽉 찬 상태로 먹은 R은 보너스로 센다
+                            r_full += 1
+                            if r_full >= R_BONUS_COUNT:
+                                r_full = 0
+                                score += R_BONUS_POINTS
+                                bonus_total += R_BONUS_POINTS
+                                bonus_flash = 90
                         player.hp = min(player.max_hp, player.hp + 1)
                     elif it[1] == "B":
                         player.b_count += 1
@@ -788,29 +1221,33 @@ def main():
 
             enemy_count = player.power  # 적이 한 번에 쏘는 총알 수 (아이템 드롭 조건에도 쓴다)
             if max_power_score is not None:
-                enemy_count += (score - max_power_score) // ENEMY_SCALE_SCORE
-            enemy_count = min(ENEMY_MAX_COUNT, enemy_count)
+                enemy_count += (int(score - bonus_total) - max_power_score) // ENEMY_SCALE_SCORE
+            enemy_count = min(m["enemy_max_count"], enemy_count)
 
             blast_radius = None
             if blast and player.b_count > 0:  # B가 있으면 B부터 사용
                 player.b_count -= 1
-                blast_radius = B_RADIUS
-                enemy_bullets.clear()  # 적은 범위 안만, 적 총알은 화면 전체에서 사라진다
-            elif blast and player.has_s:
-                player.has_s = False
-                blast_radius = BLAST_RADIUS
-                enemy_bullets.clear()
+                blast_radius = B_RADIUS  # 폭발 범위에 닿은 적 총알만 사라진다 (화면 전체를 지우지 않는다)
+            elif blast and player.has_s and not s_charging:  # S는 오른쪽 버튼을 꾹 눌러야 한다: 누르는 순간부터 충전 시작
+                s_charging = True
+                s_charge = 0
+            if s_charging:
+                if player.has_s and pygame.mouse.get_pressed()[2]:  # 계속 누르고 있으면 충전, 중간에 떼면 취소
+                    s_charge += 1
+                    if s_charge >= S_HOLD_FRAMES:  # 0.5초를 채우면 발동
+                        s_charging = False
+                        player.has_s = False
+                        blast_radius = BLAST_RADIUS
+                else:
+                    s_charging = False
             if blast_radius:
-                explosions.append([player.pos.copy(), 30, blast_radius, 30])
+                explosions.append([player.pos.copy(), 30, blast_radius, 30, True])  # 마지막 True: 내가 터뜨린 폭발
                 for en in enemies:
                     if en.pos.distance_to(player.pos) < blast_radius + en.radius:  # 폭탄에 닿은 적은 바로 사라지고, 총알로 잡은 것처럼 아이템도 떨어뜨린다
                         en.hp = 0
-                        score += 10
+                        score += kill_points(en)
                         drop_items(en, player, enemy_count, items)
-                        for _ in range(14):
-                            a = random.uniform(0, math.tau)
-                            s = random.uniform(1, 5)
-                            particles.append([en.pos.copy(), pygame.Vector2(math.cos(a), math.sin(a)) * s, 30])
+                        explode_enemy(en, particles, fx)
                 enemies = [en for en in enemies if en.hp > 0]
 
             for en in enemies:
@@ -824,15 +1261,19 @@ def main():
                     elif en.yellow:
                         en.shoot = random.randint(50, 90)
                         if v.length_squared():
-                            enemy_bullets.append([en.pos.copy(), v.normalize() * 7])
+                            enemy_bullets.append([en.pos.copy(), v.normalize() * 7 * m["bullet_speed"] / 4])
                     elif v.length_squared():
                         aim = v.normalize()
                         for i in range(enemy_count):
                             angle = (i - (enemy_count - 1) / 2) * 12
-                            enemy_bullets.append([en.pos.copy(), aim.rotate(angle) * 4])
+                            enemy_bullets.append([en.pos.copy(), aim.rotate(angle) * m["bullet_speed"]])
             for eb in enemy_bullets:
                 eb[0] += eb[1]
             enemy_bullets = [eb for eb in enemy_bullets if -20 < eb[0].x < W + 20 and -20 < eb[0].y < H + 20]
+            for ex in explosions:  # 날아오던 총알이 내가 터뜨린 폭탄(B/S)의 폭발에 닿으면 사라진다
+                if len(ex) > 4 and ex[4]:
+                    enemy_bullets = [eb for eb in enemy_bullets if eb[0].distance_to(ex[0]) > ex[2] + 5]
+                    bombs = [bm for bm in bombs if bm[0].distance_to(ex[0]) > ex[2] + 9]  # 상대편 폭탄도 폭발에 닿으면 터지지 못하고 사라진다
 
             bomb_hit = False
             for bm in bombs:
@@ -852,37 +1293,50 @@ def main():
             # 플레이어 총알 vs 적
             for en in enemies:
                 for b in bullets:
-                    if en.pos.distance_to(b[0]) < en.radius + b[1]:
+                    if bullet_hits(en, b):
+                        add_fx(fx, b[0], 16, 10)  # 맞힌 자리에 작은 폭발
                         b[0].y = -999
                         en.hp -= 1
                         if en.hp <= 0:
-                            score += 10
+                            score += kill_points(en)
                             drop_items(en, player, enemy_count, items)
-                            for _ in range(14):
-                                a = random.uniform(0, math.tau)
-                                s = random.uniform(1, 5)
-                                particles.append([en.pos.copy(), pygame.Vector2(math.cos(a), math.sin(a)) * s, 30])
+                            explode_enemy(en, particles, fx)  # 쓰러지면 전투기가 크게 폭발
                         break
             enemies = [en for en in enemies if en.hp > 0 and en.pos.y < H + 30]
-            level = 1 + score // 150
+            level = 1 + int(score - bonus_total) // 150
 
             # 피격 처리
             if not player.invuln:
-                # 적 비행기와 닿는 것은 괜찮고, 총알이나 폭탄에 맞을 때만 체력이 깎인다
+                # 총알/폭탄에 맞거나 적 비행기와 부딪히면 체력이 깎인다. 부딪힌 적도 함께 피해를 입는다
                 hit_b = [eb for eb in enemy_bullets if eb[0].distance_to(player.pos) < 12]
-                if hit_b or bomb_hit:
+                rammed = [en for en in enemies if en.pos.distance_to(player.pos) < en.radius + player.radius]
+                if hit_b or bomb_hit or rammed:
                     player.hp -= 1
                     player.invuln = INVULN_TIME
+                    add_fx(fx, player.pos, 20, 18, "boom" if EXPLOSION_SPRITE else "fire")  # 맞거나 부딪힌 내 비행기에 작은 폭발
                     enemy_bullets = [eb for eb in enemy_bullets if eb not in hit_b]
+                    for en in rammed:  # 부딪힌 적도 1 피해, 쓰러지면 총알로 잡은 것과 같이 점수와 아이템
+                        add_fx(fx, (en.pos + player.pos) / 2, 34, 20)  # 부딪힌 자리에서 폭발
+                        en.hp -= 1
+                        if en.hp <= 0:
+                            score += kill_points(en)
+                            drop_items(en, player, enemy_count, items)
+                            explode_enemy(en, particles, fx)
+                    enemies = [en for en in enemies if en.hp > 0]
                     if player.hp <= 0:
                         game_over = True
-                        save_best(score)
+                        add_fx(fx, player.pos, 70, 40)  # 내 전투기가 쓰러지는 큰 폭발
+                        save_best(score, level, play_frames // FPS)
 
         if not paused and not shop:
             for p in particles:
                 p[0] += p[1]
                 p[2] -= 1
             particles = [p for p in particles if p[2] > 0]
+            bonus_flash = max(0, bonus_flash - 1)
+            for f in fx:  # 폭발 그림의 나이를 먹인다
+                f[1] += 1
+            fx = [f for f in fx if f[1] < f[2]]
 
         # 그리기
         screen.fill((10, 10, 30))
@@ -896,40 +1350,48 @@ def main():
             pygame.draw.circle(screen, fade_color((255, 80, 80), enemy_alpha), bm[1], BOMB_RADIUS, 1)
             pygame.draw.circle(screen, fade_color((255, 60, 60) if blink and bm[2] <= 40 else (40, 40, 50), enemy_alpha), bm[0], 9)
             pygame.draw.circle(screen, fade_color((200, 200, 210), enemy_alpha), bm[0], 9, 2)
-        for ex in explosions:
-            t = ex[1] / ex[3]
-            pygame.draw.circle(screen, (255, 170, 60), ex[0], ex[2] * (1.2 - 0.2 * t))
-            pygame.draw.circle(screen, (255, 240, 160), ex[0], ex[2] * 0.5 * t)
-        for pos, kind in items:
+        if explosions:  # 폭탄 폭발: 반투명하게 그려서 S처럼 화면을 덮는 큰 폭발에서도 뒤가 보인다
+            blast_layer = pygame.Surface((W, H), pygame.SRCALPHA)
+            for ex in explosions:
+                t = ex[1] / ex[3]  # 1 → 0
+                big_blast = ex[2] > 200
+                pygame.draw.circle(blast_layer, (255, 120, 20, int((70 if big_blast else 150) * t + 20)), ex[0], ex[2] * (1.2 - 0.2 * t))
+                pygame.draw.circle(blast_layer, (255, 170, 40, int((130 if big_blast else 220) * t + 20)), ex[0], max(1, ex[2] * 0.5 * t))  # 낮은 투명도의 밝은 색은 회색으로 보여서 주황 계열로 둔다
+                pygame.draw.circle(blast_layer, (255, 230, 150, int(220 * t + 35)), ex[0], ex[2] * (1.2 - 0.2 * t), 6 if big_blast else 3)  # 바깥 고리
+            screen.blit(blast_layer, (0, 0))
+        for it in items:  # 끌려오는 동안에도 모양은 그대로 (크기를 줄이거나 꼬리를 달지 않는다)
+            pos, kind = it[0], it[1]
             fill, edge = ITEM_COLORS[kind]
-            dist = pos.distance_to(player.pos)
-            k = 1.0
-            if dist < MAGNET_RADIUS:  # 빨려 들어오는 동안 점점 작아지고 꼬리가 생김
-                k = max(0.5, dist / MAGNET_RADIUS)
-                tail = pos - (player.pos - pos).normalize() * (16 * (1 - k) * 2 + 6) if dist else pos
-                pygame.draw.line(screen, fill, pos, tail, max(1, int(8 * k)))
             if kind == "B":  # 총알 모양
-                rect = pygame.Rect(0, 0, int(18 * k), int(30 * k))
+                rect = pygame.Rect(0, 0, 18, 30)
                 rect.center = pos
-                pygame.draw.rect(screen, fill, rect, border_radius=int(9 * k))
-                pygame.draw.rect(screen, edge, rect, max(1, int(3 * k)), border_radius=int(9 * k))
+                pygame.draw.rect(screen, fill, rect, border_radius=9)
+                pygame.draw.rect(screen, edge, rect, 3, border_radius=9)
             else:
-                pygame.draw.circle(screen, fill, pos, 12 * k)
-                pygame.draw.circle(screen, edge, pos, 12 * k, max(1, int(3 * k)))
+                pygame.draw.circle(screen, fill, pos, 12)
+                pygame.draw.circle(screen, edge, pos, 12, 3)
             t = font.render("$" if kind == "C" else kind, True, edge)
-            if k < 1:
-                t = pygame.transform.smoothscale(t, (max(1, int(t.get_width() * k)), max(1, int(t.get_height() * k))))
             screen.blit(t, t.get_rect(center=pos))
         for eb in enemy_bullets:
             pygame.draw.circle(screen, fade_color((255, 160, 60), enemy_alpha), eb[0], 5)
         for en in enemies:
             en.draw(enemy_alpha)
+        if not game_over:  # 내 비행기를 폭발 그림보다 먼저 그려서, 내가 맞았을 때의 폭발이 비행기 위에 보이게 한다
+            player.draw()
+            if s_charging:  # S 충전 표시: 비행기 둘레의 고리가 0.5초 동안 한 바퀴 채워진다
+                ring = pygame.Rect(0, 0, 90, 90)
+                ring.center = player.pos
+                pygame.draw.circle(screen, (60, 70, 110), player.pos, 45, 3)
+                pygame.draw.arc(screen, (170, 230, 255), ring, math.pi / 2, math.pi / 2 + math.tau * s_charge / S_HOLD_FRAMES, 6)
+        draw_fx(fx)
         for p in particles:
             pygame.draw.circle(screen, (255, 200, 120), p[0], max(1, p[2] // 8))
-        if not game_over:
-            player.draw()
 
         draw_hud(screen, score, level, player)
+        if bonus_flash:  # R 보너스 안내: 위에서 잠깐 보였다가 사라진다
+            t = big.render(f"R Bonus +{R_BONUS_POINTS}!", True, (255, 150, 170))
+            t.set_alpha(min(255, bonus_flash * 8))
+            screen.blit(t, t.get_rect(center=(W / 2, 150 - (90 - bonus_flash) * 0.3)))
 
         if game_over:
             t = big.render("GAME OVER", True, (255, 90, 90))
@@ -944,7 +1406,9 @@ def main():
             pygame.draw.rect(screen, (240, 240, 250), (W / 2 - 38, H / 2 - 70, 24, 80), border_radius=4)
             pygame.draw.rect(screen, (240, 240, 250), (W / 2 + 14, H / 2 - 70, 24, 80), border_radius=4)
             t = big.render("Pause", True, (240, 240, 250))
-            screen.blit(t, t.get_rect(center=(W / 2, 170)))
+            screen.blit(t, t.get_rect(center=(W / 2, 165)))
+            t = font.render(f"{game_mode} Mode", True, MODE_COLORS[game_mode])
+            screen.blit(t, t.get_rect(center=(W / 2, 208)))
             t = font.render("Press Space to Resume", True, (230, 230, 240))
             screen.blit(t, t.get_rect(center=(W / 2, H / 2 + 50)))
             hover = PAUSE_HOME.collidepoint(pygame.mouse.get_pos()[0] / scale, pygame.mouse.get_pos()[1] / scale)
@@ -988,13 +1452,17 @@ def main():
             pygame.draw.rect(screen, (60, 120, 90), SHOP_CONTINUE, border_radius=10)
             t = font.render("Continue (Enter)", True, (240, 255, 245))
             screen.blit(t, t.get_rect(center=SHOP_CONTINUE.center))
+            if confirm_idx is not None and confirm_idx < len(shop_offers):
+                draw_confirm_screen(shop_offers[confirm_idx], player, shop_msg)
 
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
 
 
+splash_screen()
 title_screen()
 while True:
-    if main() == "home":  # 일시정지 화면에서 홈으로 나온 경우
+    if main() == "home":  # 일시정지 화면에서 홈으로 나온 경우: 첫 화면부터 다시
+        splash_screen()
         title_screen()
