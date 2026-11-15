@@ -316,7 +316,7 @@ def title_screen():
                 screen.blit(t, t.get_rect(center=(slot_x[i], row_y + 112)))
 
         if left is None:
-            t = font.render("← →  /  1 2 3  /  Click : Choose your ship", True, (170, 175, 205))
+            t = font.render("Choose your ship", True, (170, 175, 205))
             screen.blit(t, t.get_rect(center=(W / 2, row_y + 140)))
 
         if left is not None:
