@@ -112,6 +112,31 @@ def delay(a, sec):
     return [0.0] * int(sec * SR) + a
 
 
+def norm(x):
+    m = max(abs(v) for v in x) or 1.0
+    return [v / m for v in x]
+
+
+def rumble(n, fc, passes=2):
+    """낮은 웅웅거림: 잡음을 낮은 소리만 남기게 여러 번 걸러서(passes번) 만든다. 북소리처럼 음높이가 있는 쿵이 아니라 거친 낮은 덩어리."""
+    x = noise(n)
+    for _ in range(passes):
+        x = lowpass(x, fc)
+    x = norm(highpass(x, 35))  # 35Hz 아래는 스피커로 거의 안 들리고 소리 크기만 잡아먹어서 뺀다
+    wob = norm(lowpass(noise(n), 22))  # 소리 크기가 자연스럽게 출렁이게 (참고 소리처럼 +-3dB 정도)
+    return [v * (1.0 + 0.22 * w) for v, w in zip(x, wob)]
+
+
+def hold_env(n, hold, decay, attack=0.004):
+    """한동안 크게 이어지다가(hold초) 지수로 줄어드는 크기 곡선: 폭발의 "웅~" 하고 이어지는 부분."""
+    out = []
+    for i in range(n):
+        t = i / SR
+        a = min(1.0, t / attack) if attack > 0 else 1.0
+        out.append(a * (1.0 if t < hold else math.exp(-(t - hold) * decay)))
+    return out
+
+
 def save(name, samples, peak=0.8):  # 0.8: OGG로 압축하면 조금 튀어서 여유를 둔다
     if ONLY and not any(name.startswith(o) for o in ONLY):
         return
@@ -143,90 +168,51 @@ body = mul(bandpass(noise(n), 300, 2500), env(n, 55, 0.0004))
 kick = mul(sine(sweep_phase(420, 150, n, 0.5)), env(n, 60, 0.0004))
 save("shoot_b", sat(mix(scale(crack, 1.0), scale(body, 0.8), scale(kick, 0.5)), 1.6))
 
-# ── 폭탄 터질 때: 실제 폭발음 (갈라지는 소리 → 쾅 → 낮게 울리며 사라지는 소리) ─────
-# a: 가까운 폭발: 번쩍 갈라지는 소리 + 점점 낮아지는 쾅 + 아주 낮은 쿵 + 파편 튀는 소리 + 공간 울림
-n = int(SR * 1.3)
-crack = mul(highpass(noise(n), 1500), env(n, 55, 0.0003))
-cutoffs = [4500 * math.exp(-i / SR * 5.5) + 140 for i in range(n)]
-boom = mul(lowpass(noise(n), cutoffs), env(n, 3.4, 0.0015))
-sub = mul(sine(sweep_phase(95, 28, n, 0.45)), env(n, 5.0, 0.002))
-rumble = mul(bandpass(noise(n), 40, 220), env(n, 2.2, 0.01))
-debris = delay([(random.uniform(-1, 1) * 0.9 if random.random() < 0.0035 else 0.0) * math.exp(-i / SR * 3.2) for i in range(n)], 0.05)[:n]
-debris = highpass(debris, 600)
-bomb = sat(mix(scale(crack, 0.5), scale(boom, 1.0), scale(sub, 1.2), scale(rumble, 0.9), scale(debris, 0.35)), 2.2)
-save("bomb_a", reverb(bomb, wet=0.33, size=1.2, tail=0.7))
-# b: 멀리서 크게 터지는 폭발: 갈라지는 소리가 둔하고, 낮은 울림이 훨씬 길다
-n = int(SR * 1.9)
-cutoffs = [2600 * math.exp(-i / SR * 3.2) + 90 for i in range(n)]
-boom = mul(lowpass(noise(n), cutoffs), env(n, 2.2, 0.012))
-sub = mul(sine(sweep_phase(70, 24, n, 0.4)), env(n, 3.0, 0.01))
-rumble = mul(bandpass(noise(n), 30, 160), env(n, 1.5, 0.03))
-thud = mul(lowpass(noise(n), 400), env(n, 30, 0.002))
-bomb = sat(mix(scale(boom, 1.0), scale(sub, 1.4), scale(rumble, 1.1), scale(thud, 0.7)), 2.0)
-save("bomb_b", reverb(bomb, wet=0.42, size=1.5, tail=1.1))
+# ── 폭탄 터질 때 / 적을 맞혔을 때 / 내가 맞았을 때: 낮게 웅웅거리는 폭발음 ───────────────
+# 참고 소리(Explosionnn!.mp3)를 분석해 보니 150Hz 아래의 낮은 소리가 약 75%이고, 1초 가까이 크게 이어지다가 천천히 줄어든다.
+# 사인파 "쿵"(북소리 같음) 대신 낮은 잡음 덩어리(rumble)를 오래 이어 붙이고, 중저음 몸통과 약간의 갈라짐을 얹는다.
+# 작은 스피커는 아주 낮은 소리를 못 내서, 찌그러뜨리기(sat)로 높은 배음을 만들어 들리게 한다. 길이는 모두 0.5~1초.
+def explosion(dur, tail, sub_fc, hold, decay, mid_w, mid_decay, crack_w, crack_decay, drive, extra=None):
+    n = int(SR * dur)
+    sub = mul(rumble(n, sub_fc, 2), hold_env(n, hold, decay))
+    body = mul(rumble(n, 420, 2), hold_env(n, hold * 0.35, mid_decay))
+    crack = mul(bandpass(noise(n), 700, 5000), env(n, crack_decay, 0.0008))
+    click = mul(highpass(noise(n), 3000), env(n, 500, 0.0001))
+    layers = [scale(sub, 1.0), scale(body, mid_w), scale(norm(crack), crack_w), scale(norm(click), 0.18)]
+    if extra:
+        layers.append(extra(n))
+    x = sat(mix(*layers), drive)
+    return reverb(x, wet=0.16, size=0.7, tail=tail)
 
-# ── 내가 적을 맞혔을 때 / 내가 맞았을 때: 묵직하게 "쾅!" 부딪히는 소리 ───────────────────
-# 층을 쌓아서 실감을 낸다: 딸깍(아주 짧은 고음) + 갈라짐 + 쾅(점점 어두워지는 잡음) + 낮은 쿵(찌그러뜨려서 묵직하게)
-#                         + 철판 울림 + 파편 튀는 소리 + 공간 울림
-def burst_train(n, starts, dec, lo, hi, amp):
-    """지정한 시각(초)마다 짧은 잡음 덩어리가 튀는 소리 (파편, 덜컹거림)."""
+
+# bomb_a: 큰 폭발 약 1초. 낮은 웅웅거림이 0.35초 이어지다 줄어든다
+save("bomb_a", explosion(0.85, 0.15, 110, 0.35, 8.5, 0.5, 9, 0.25, 35, 3.0))
+# bomb_b: 더 깊고 오래 이어지는 폭발 (낮은 소리가 더 낮고, 중저음 거친 소리가 조금 더 많다)
+save("bomb_b", explosion(0.9, 0.1, 85, 0.45, 7.5, 0.7, 7, 0.2, 30, 3.2))
+# hit_a: 적을 맞혔을 때 0.5초. 짧게 웅! 하고 줄어든다 (자주 나는 소리라 짧게)
+save("hit_a", explosion(0.42, 0.08, 120, 0.08, 14, 0.7, 16, 0.35, 45, 3.0))
+# hit_b: 더 무겁고 낮은 쪽
+save("hit_b", explosion(0.45, 0.05, 95, 0.12, 11, 0.5, 13, 0.25, 40, 3.2))
+
+
+def hull_clang(n):
+    """비행기 몸체(철판)가 울리는 작은 금속 소리"""
     out = [0.0] * n
-    for t0 in starts:
-        i0 = int(t0 * SR)
-        m = min(n - i0, int(SR * 0.08))
-        if m <= 0:
-            continue
-        seg = mul(bandpass(noise(m), lo, hi), env(m, dec, 0.0004))
-        for i in range(m):
-            out[i0 + i] += seg[i] * amp
-    return out
-
-
-def clang(n, partials):
-    """철판을 때렸을 때처럼 길게 남는 금속 울림 (높이가 서로 맞지 않는 소리들)."""
-    out = [0.0] * n
-    for f, amp, dec in partials:
+    for f, amp, dec in ((300, 0.5, 14), (520, 0.4, 17), (880, 0.3, 20)):
         f2 = f * (1 + random.uniform(-0.02, 0.02))
         for i in range(n):
             t = i / SR
             out[i] += amp * math.sin(2 * math.pi * f2 * t) * math.exp(-t * dec)
-    return out
+    return scale(norm(out), 0.22)
 
 
-# hit_a: 내가 쏜 총알이 적에 쾅! (또렷하고 단단한 폭발 + 금속 소리. 자주 나는 소리라 너무 길지 않게)
-n = int(SR * 0.38)
-click = mul(highpass(noise(n), 3000), env(n, 400, 0.0001))
-crack = mul(bandpass(noise(n), 800, 6000), env(n, 90, 0.0003))
-boom = mul(lowpass(noise(n), [3000 * math.exp(-i / SR * 30) + 250 for i in range(n)]), env(n, 11, 0.0008))
-thump = mul(sine(sweep_phase(210, 52, n, 0.4)), env(n, 14, 0.0008))
-metal = clang(n, ((420, 0.25, 22), (770, 0.2, 26), (1210, 0.15, 30)))
-debris = burst_train(n, (0.04, 0.08, 0.13), 70, 1200, 4500, 0.35)
-hit = sat(mix(scale(click, 0.6), scale(crack, 0.9), scale(boom, 1.0), scale(thump, 1.4), scale(metal, 0.5), scale(debris, 0.6)), 2.6)
-save("hit_a", reverb(hit, wet=0.2, size=0.8, tail=0.2))
-# hit_b: 더 무겁게 쿵! 하고 터지는 소리 (낮은 소리가 크고 금속 소리는 적다)
-n = int(SR * 0.45)
-crack = mul(bandpass(noise(n), 600, 5000), env(n, 80, 0.0003))
-boom = mul(lowpass(noise(n), [2200 * math.exp(-i / SR * 22) + 180 for i in range(n)]), env(n, 9, 0.001))
-thump = mul(sine(sweep_phase(155, 40, n, 0.4)), env(n, 8.5, 0.001))
-debris = burst_train(n, (0.05, 0.1, 0.16, 0.23), 60, 900, 3500, 0.3)
-hit = sat(mix(scale(crack, 0.7), scale(boom, 1.0), scale(thump, 1.7), scale(debris, 0.6)), 2.8)
-save("hit_b", reverb(hit, wet=0.26, size=1.0, tail=0.22))
+def zap_buzz(n):
+    """합선되어 전기가 튀는 지직 소리 (60Hz로 끊김)"""
+    gate = [1.0 if (i / SR * 60) % 1.0 < 0.5 else 0.12 for i in range(n)]
+    return scale(norm(mul(mul(bandpass(noise(n), 1200, 4500), gate), env(n, 8, 0.001))), 0.45)
 
-# hurt_a: 내가 맞았을 때 쾅! (충돌 + 철판이 찌그러지고 덜컹거리는 소리, hit보다 더 크고 길다)
-n = int(SR * 0.95)
-crack = mul(bandpass(noise(n), 500, 5000), env(n, 70, 0.0003))
-boom = mul(lowpass(noise(n), [3500 * math.exp(-i / SR * 7) + 150 for i in range(n)]), env(n, 7, 0.001))
-thump = mul(sine(sweep_phase(170, 38, n, 0.4)), env(n, 8, 0.001))
-metal = clang(n, ((260, 0.5, 7), (430, 0.45, 9), (690, 0.35, 12), (1100, 0.3, 15), (1800, 0.2, 19), (2900, 0.12, 24)))
-rattle = burst_train(n, (0.09, 0.15, 0.22, 0.31, 0.42, 0.55), 80, 1000, 4000, 0.3)
-hurt = sat(mix(scale(crack, 1.0), scale(boom, 1.0), scale(thump, 1.7), scale(metal, 0.6), scale(rattle, 0.7)), 3.0)
-save("hurt_a", reverb(hurt, wet=0.3, size=1.0, tail=0.5))
-# hurt_b: 쾅! + 합선되어 전기가 튀는 지직 소리
-n = int(SR * 0.9)
-crack = mul(bandpass(noise(n), 500, 5000), env(n, 75, 0.0003))
-boom = mul(lowpass(noise(n), [3000 * math.exp(-i / SR * 8) + 150 for i in range(n)]), env(n, 8, 0.001))
-thump = mul(sine(sweep_phase(150, 38, n, 0.4)), env(n, 9, 0.001))
-gate = [1.0 if (i / SR * 60) % 1.0 < 0.5 else 0.12 for i in range(n)]  # 60Hz로 끊기는 지직거림
-zap = mul(mul(bandpass(noise(n), 1200, 4500), gate), env(n, 7, 0.001))
-hurt = sat(mix(scale(crack, 0.9), scale(boom, 1.0), scale(thump, 1.6), scale(zap, 0.7)), 3.0)
-save("hurt_b", reverb(hurt, wet=0.25, size=0.9, tail=0.4))
+
+# hurt_a: 내가 맞았을 때 약 0.8초. hit보다 길고 크고, 철판 울림이 섞인다
+save("hurt_a", explosion(0.68, 0.12, 130, 0.18, 9, 0.8, 11, 0.4, 40, 3.2, hull_clang))
+# hurt_b: 합선되어 지직거리는 소리가 섞인 쪽
+save("hurt_b", explosion(0.68, 0.12, 110, 0.15, 9, 0.7, 10, 0.35, 38, 3.2, zap_buzz))
