@@ -277,8 +277,8 @@ def top_record(mode):
 
 # 공용 순위표 (웹 버전 전용): Supabase 표 scores에 점수를 보내고 불러온다. 아래 두 값이 비어 있으면 꺼진다(웹도 지금처럼 그 탭에서만 기록).
 # 주소와 anon(공개) 키는 코드에 넣어도 된다. 순위표 표는 읽기/추가만 허용하도록 만들어져 있다 (README의 "공용 순위표" 참고). service_role 키는 절대 넣지 않는다.
-SUPABASE_URL = ""  # 예: "https://abcdefgh.supabase.co"
-SUPABASE_KEY = ""  # anon(publishable) 키
+SUPABASE_URL = "https://wlftptadnfnmbebobibe.supabase.co"
+SUPABASE_KEY = "sb_publishable_IZzdzvJFrvAZwzmfK4za0g_Ti5aotXq"  # 공개(publishable) 키: 코드에 넣어도 되는 키 (읽기/점수 추가만 가능)
 ONLINE = WEB and bool(SUPABASE_URL) and bool(SUPABASE_KEY)
 _online_frames = 0
 
