@@ -122,8 +122,8 @@ BEST_BOX = pygame.Rect(0, 0, 430, 46)  # 모드 버튼 줄과 같은 길이
 BEST_BOX.center = (W // 2, H - 55)  # 타이틀의 최고 점수 칸
 STATS_BACK = pygame.Rect(W // 2 - 210, 500, 180, 50)    # 능력치 소개 화면의 Back 버튼
 STATS_SELECT = pygame.Rect(W // 2 + 30, 500, 180, 50)   # 능력치 소개 화면의 Select 버튼
-PAUSE_HOME = pygame.Rect(300, 390, 200, 50)  # 일시정지 화면의 "Go to Home" 버튼
-GAMEOVER_HOME = pygame.Rect(300, H // 2 + 65, 200, 50)  # 게임 오버 화면의 "Go to Home" 버튼
+PAUSE_HOME = pygame.Rect(300, 390, 200, 50)  # 일시정지 화면의 "Go Home" 버튼
+GAMEOVER_HOME = pygame.Rect(300, H // 2 + 65, 200, 50)  # 게임 오버 화면의 "Go Home" 버튼
 RAINBOW = [(255, 60, 60), (255, 150, 40), (255, 230, 60), (80, 210, 90), (70, 140, 255), (170, 90, 230)]
 ITEM_COLORS = {  # (채움색, 테두리색)
     "B": ((255, 210, 120), (120, 70, 10)),
@@ -2011,7 +2011,7 @@ async def main():
             hover = GAMEOVER_HOME.collidepoint(pygame.mouse.get_pos()[0] / scale, pygame.mouse.get_pos()[1] / scale)
             pygame.draw.rect(screen, (70, 90, 150) if hover else (40, 50, 90), GAMEOVER_HOME, border_radius=10)
             pygame.draw.rect(screen, (150, 190, 255), GAMEOVER_HOME, 2, border_radius=10)
-            t = font.render("Go to Home", True, (240, 245, 255))
+            t = font.render("Go Home", True, (240, 245, 255))
             screen.blit(t, t.get_rect(center=GAMEOVER_HOME.center))
 
         if paused:
@@ -2029,7 +2029,7 @@ async def main():
             hover = PAUSE_HOME.collidepoint(pygame.mouse.get_pos()[0] / scale, pygame.mouse.get_pos()[1] / scale)
             pygame.draw.rect(screen, (70, 90, 150) if hover else (40, 50, 90), PAUSE_HOME, border_radius=10)
             pygame.draw.rect(screen, (150, 190, 255), PAUSE_HOME, 2, border_radius=10)
-            t = font.render("Go to Home", True, (240, 245, 255))
+            t = font.render("Go Home", True, (240, 245, 255))
             screen.blit(t, t.get_rect(center=PAUSE_HOME.center))
 
         if shop:
