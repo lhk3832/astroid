@@ -2166,8 +2166,9 @@ async def main():
         screen.fill((10, 10, 30))
         for x, y, s in stars:
             pygame.draw.circle(screen, (90, 90, 130), (x, (y + star_ms * s // 40) % H), s)
-        for b in bullets:
-            pygame.draw.ellipse(screen, (255, 240, 120), (b[0].x - b[1], b[0].y - b[1] * 2, b[1] * 2, b[1] * 4))
+        for b in bullets:  # 내 미사일은 파란색 (가운데는 밝게)
+            pygame.draw.ellipse(screen, (70, 150, 255), (b[0].x - b[1], b[0].y - b[1] * 2, b[1] * 2, b[1] * 4))
+            pygame.draw.ellipse(screen, (200, 230, 255), (b[0].x - b[1] / 2, b[0].y - b[1], b[1], b[1] * 2))
         enemy_alpha = fade / FADE_FRAMES if fade else 1.0  # 사라지는 중이면 점점 흐려진다
         for bm in bombs:
             blink = (bm[2] // 6) % 2 == 0 or bm[2] > 40
@@ -2196,8 +2197,9 @@ async def main():
                 pygame.draw.circle(screen, edge, pos, 12, 3)
             t = font.render("$" if kind == "C" else kind, True, edge)
             screen.blit(t, t.get_rect(center=pos))
-        for eb in enemy_bullets:
-            pygame.draw.circle(screen, fade_color((255, 160, 60), enemy_alpha), eb[0], ENEMY_BULLET_RADIUS)
+        for eb in enemy_bullets:  # 적의 총알은 빨간색 (가운데는 밝게)
+            pygame.draw.circle(screen, fade_color((255, 50, 50), enemy_alpha), eb[0], ENEMY_BULLET_RADIUS)
+            pygame.draw.circle(screen, fade_color((255, 170, 160), enemy_alpha), eb[0], max(1, ENEMY_BULLET_RADIUS // 2))
         for en in enemies:
             en.draw(enemy_alpha)
         if not game_over:  # 내 비행기를 폭발 그림보다 먼저 그려서, 내가 맞았을 때의 폭발이 비행기 위에 보이게 한다
