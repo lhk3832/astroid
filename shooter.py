@@ -226,13 +226,33 @@ def to_record(v):
     return rec
 
 
+STORAGE_KEY = "astroid_best"  # 웹에서 기록을 넣어 두는 브라우저 저장소(localStorage)의 이름
+
+
+def read_saved_text():
+    """저장된 기록 글자를 읽는다: 웹은 브라우저 저장소(새로고침해도 남는다), 데스크톱은 best_score.txt."""
+    if WEB:
+        import platform
+        return str(platform.window.localStorage.getItem(STORAGE_KEY) or "")
+    with open(BEST_FILE, encoding="utf-8") as f:
+        return f.read()
+
+
+def write_saved_text(text):
+    if WEB:
+        import platform
+        platform.window.localStorage.setItem(STORAGE_KEY, text)
+    else:
+        with open(BEST_FILE, "w", encoding="utf-8") as f:
+            f.write(text)
+
+
 def load_best():
     """모드별 순위표 {"Easy": [1위, 2위, ...], "Normal": [...], "Hard": [...]} (점수 높은 순, 최대 RANK_SIZE개).
     기록 하나는 점수/날짜/전투기/레벨/플레이 시간(초)/플레이어 이름. 예전 파일(모드별 기록 하나, 점수 숫자)도 읽는다."""
     ranks = {name: [] for name in MODES}
     try:
-        with open(BEST_FILE, encoding="utf-8") as f:
-            data = json.loads(f.read().strip())
+        data = json.loads(read_saved_text().strip())
         if not isinstance(data, dict):
             data = {"Normal": data}  # 예전 파일: 점수 숫자 하나는 Normal 점수
         for name in ranks:
@@ -242,8 +262,8 @@ def load_best():
             recs = [r for r in recs if r["score"] > 0]
             recs.sort(key=lambda r: -r["score"])
             ranks[name] = recs[:RANK_SIZE]
-    except (OSError, ValueError, TypeError):
-        pass
+    except Exception:
+        pass  # 파일/저장소가 없거나 깨져 있으면 빈 순위표로 시작한다
     return ranks
 
 
@@ -357,10 +377,9 @@ def save_best(score, level=0, seconds=0):
     ranks.sort(key=lambda r: -r["score"])  # 같은 점수는 먼저 낸 기록이 위
     del ranks[RANK_SIZE:]
     try:
-        with open(BEST_FILE, "w", encoding="utf-8") as f:
-            json.dump(rankings, f, ensure_ascii=False)
-    except OSError:
-        pass  # 저장하지 못해도 게임은 계속한다
+        write_saved_text(json.dumps(rankings, ensure_ascii=False))
+    except Exception:
+        pass  # 저장하지 못해도 게임은 계속한다 (브라우저가 저장소를 막아 둔 경우 등)
 
 
 PLAYER_MASKS = [pygame.mask.from_surface(sp, 60) if sp else None for sp in PLAYER_SPRITES]  # 내 비행기 그림의 모양(투명한 곳은 빼고)

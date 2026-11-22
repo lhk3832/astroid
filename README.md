@@ -140,11 +140,11 @@ python shooter.py
 
 - 주소: https://lhk3832.github.io/astroid/ (GitHub Pages가 `docs/` 폴더를 보여준다. 저장소 Settings → Pages에서 Branch `main`, 폴더 `/docs`로 한 번 켜야 한다)
 - 만들기: `python build_web.py` (pygbag이 필요하다: `pip install pygbag`). `shooter.py`와 `assets/`를 pygbag으로 빌드해서 `docs/`에 넣는다. 게임을 고친 뒤에는 다시 빌드해서 `docs/`까지 커밋해야 웹에도 반영된다.
-- 웹에서 다른 점: 글꼴이 pygame 기본 글꼴이고(한글 이름은 안 보일 수 있다), 최고 기록은 그 탭을 닫으면 사라진다 (파일에 저장하지 못한다). 처음 열 때 게임 엔진을 내려받느라 몇 초 걸린다.
+- 웹에서 다른 점: 글꼴이 pygame 기본 글꼴이고(한글 이름은 안 보일 수 있다), 최고 기록은 파일 대신 그 브라우저의 저장소(localStorage, 키 `astroid_best`)에 저장돼서 새로고침하거나 다시 들어와도 남는다 (같은 브라우저에서만 보이고, 사이트 데이터를 지우거나 시크릿 창이면 사라진다). 처음 열 때 게임 엔진을 내려받느라 몇 초 걸린다.
 
 ## 공용 순위표 (웹 버전, Supabase)
 
-- 켜는 법: `shooter.py` 위쪽 `SUPABASE_URL`, `SUPABASE_KEY`(anon 공개 키)에 값을 넣고 `python build_web.py` → `docs/` 푸시. 둘 중 하나라도 비어 있으면 꺼져 있고(웹도 그 탭에서만 기록), 데스크톱은 늘 내 컴퓨터 파일(`best_score.txt`)에 저장한다.
+- 켜는 법: `shooter.py` 위쪽 `SUPABASE_URL`, `SUPABASE_KEY`(anon 공개 키)에 값을 넣고 `python build_web.py` → `docs/` 푸시. 둘 중 하나라도 비어 있으면 꺼져 있고(웹도 그 브라우저에만 기록), 데스크톱은 늘 내 컴퓨터 파일(`best_score.txt`)에 저장한다.
 - 켜져 있으면: 웹에서 한 판이 끝날 때(게임 오버/홈/창 닫기 중 먼저) 점수(1 이상)를 서버 표 `scores`에 보낸다 (이름은 10자까지, 안 쓰면 Guest). 순위 화면(Best Records / Top 10)과 최고 점수 칸("Top Score")은 모든 플레이어의 점수에서 모드별 1~10위를 서버에서 불러와 보여 준다 (시작할 때, 점수를 보낸 직후, 그 뒤 30초마다 새로 불러온다). 인터넷이 안 되면 점수를 보내지 못하지만 게임은 그대로 된다.
 - 서버 표 만들기 (Supabase SQL Editor에서 한 번):
 

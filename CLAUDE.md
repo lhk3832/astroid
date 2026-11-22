@@ -44,4 +44,5 @@ Pygame 슈팅 게임. 단일 파일 `shooter.py`, 실행은 `python shooter.py`.
 - 공용 순위표(웹): `SUPABASE_URL`/`SUPABASE_KEY`가 있으면 `ONLINE`. `save_best`는 서버에 보내기만 하고(`online_post`), 순위는 `online_refresh()`로 받아 `online_tick()`(모든 화면 루프의 프레임 끝)이 `rankings`에 넣는다. 서버와는 `platform.window.eval`로 만든 자바스크립트 함수(`window.astroid_post`/`astroid_fetch`)와 결과 변수로 주고받는다. 이름 최대 `NAME_MAX` = 10. 테스트는 가짜 서버(CORS 허용, `/rest/v1/scores` POST/GET)를 띄우고 임시 사본의 URL을 바꿔 한다.
 - 내가 맞는 판정: 적 총알(반지름 `ENEMY_BULLET_RADIUS`)이 내 비행기 그림의 모양(`PLAYER_MASKS`, 투명한 곳 제외)과 겹치면 맞는다 (`enemy_bullet_hits_player`, 이번 프레임에 지나온 길의 4점을 본다; 그림 파일이 없으면 `PLAYER_HIT_W`/`PLAYER_HIT_H` 직사각형). 부딪힘(`rammed`)은 `radius`로 따로 본다.
 - 무적(`player.invuln`: 피격 직후, Shield)일 때 적 총알이 비행기 그림에 닿으면 피해 없이 사라진다 (main의 피격 처리 앞, 작은 불꽃 `add_fx`). 폭탄과 부딪힘은 무적이면 그대로 피해가 없다.
+- 기록 저장: `read_saved_text()`/`write_saved_text()`가 데스크톱은 `best_score.txt`, 웹은 브라우저 localStorage(`STORAGE_KEY` = astroid_best)를 쓴다 (새로고침해도 남음). 공용 순위표(`ONLINE`)가 켜져 있으면 서버가 우선이다.
 
