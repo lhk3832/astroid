@@ -1393,8 +1393,9 @@ async def ranking_screen(mode):
 async def name_screen():
     """게임을 켜면 가장 먼저 나오는 화면: 제목과 비행기, 그 아래에 "Player's name", 이름을 입력하는 칸, "Play In Guest Mode" 버튼.
     칸을 클릭하면 이름을 입력할 수 있고(Enter로 확인), 버튼을 누르면 이름 없이(Guest) 시작한다."""
-    global player_name, is_guest
+    global player_name, is_guest, start_with_s
     stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
+    title_taps = 0  # 제목을 누른 횟수 (숨겨진 기능)
     text = "" if player_name == "Guest" else player_name  # 다시 돌아오면 지난 이름을 채워 둔다
     active = False  # 입력 칸을 클릭해서 입력 중인가
     while True:
@@ -1409,6 +1410,11 @@ async def name_screen():
                     is_guest = True  # 게스트 모드: 기록에 남지 않는다
                     pygame.key.stop_text_input()
                     return
+                if title_rect(100).collidepoint(mouse):  # 숨겨진 기능: 제목을 글자 수(8번)만큼 누르면 S 1개로 시작. 입력 칸의 선택(active)은 그대로 둔다
+                    title_taps += 1
+                    if title_taps == len(GAME_TITLE):
+                        start_with_s = True
+                    continue
                 active = NAME_BOX.collidepoint(mouse)
                 if active:
                     pygame.key.start_text_input()
@@ -1434,8 +1440,7 @@ async def name_screen():
         screen.fill((10, 10, 30))
         for x, y, s in stars:
             pygame.draw.circle(screen, (90, 90, 130), (x, (y + now * s // 40) % H), s)
-        t = title_font.render(GAME_TITLE, True, (120, 210, 255))
-        screen.blit(t, t.get_rect(center=(W / 2, 100)))
+        draw_title(100)
         if SPLASH_SPRITE:
             screen.blit(SPLASH_SPRITE, SPLASH_SPRITE.get_rect(center=(W / 2, 250 + math.sin(now / 300) * 6)))
 
@@ -1681,7 +1686,7 @@ async def splash_screen():
 async def title_screen():
     """전투기 고르기 화면. 비행기를 한 번 누르면 고르고, 같은 비행기를 한 번 더 누르면(2번) 그 위에 "Confirmed"가 뜬다.
     확인되면 아래 "Tap To Start" 바를 눌러(또는 Enter) 카운트다운을 거쳐 바로 시작한다. Back/Esc는 "back"을 돌려준다.
-    숨겨진 기능: 제목(GAME_TITLE)을 글자 수만큼 누르면 S(무지개 폭탄) 1개를 가지고 시작한다 (난이도 화면에서도 된다)."""
+    숨겨진 기능: 제목(GAME_TITLE)을 글자 수만큼 누르면 S(무지개 폭탄) 1개를 가지고 시작한다 (이름 화면, 난이도 화면에서도 된다)."""
     global selected_ship, start_with_s
     title_taps = 0    # 제목을 클릭한 횟수 (숨겨진 기능)
     stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
