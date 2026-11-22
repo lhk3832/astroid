@@ -170,8 +170,8 @@ mid_font = make_font(30, True)
 press_font = make_font(46, True)  # 첫 화면의 Press To Start 바 안 글씨
 
 # 효과음: assets/sfx/{이름}_{a 또는 b}.ogg. 소리마다 두 가지를 만들어 뒀고 아래에서 마음에 드는 쪽을 고른다 (make_sfx.py로 다시 만들 수 있다).
-SFX_CHOICE = {"shoot": "a", "bomb": "a", "hit": "a", "hurt": "a"}  # shoot 총알 쏠 때 / bomb 폭탄 터질 때 / hit 내가 적을 맞혔을 때 / hurt 내가 맞았을 때
-SFX_VOLUME = {"shoot": 0.2, "bomb": 0.7, "hit": 0.5, "hurt": 0.5}  # 소리 크기(0~1). 자주 나는 소리는 작게
+SFX_CHOICE = {"shoot": "a", "bomb": "a", "hit": "a", "hurt": "a", "gameover": "a"}  # shoot 총알 쏠 때 / bomb 폭탄 터질 때 / hit 내가 적을 맞혔을 때 / hurt 내가 맞았을 때 / gameover 게임 오버
+SFX_VOLUME = {"shoot": 0.2, "bomb": 0.7, "hit": 0.5, "hurt": 0.5, "gameover": 1.0}  # 소리 크기(0~1). 자주 나는 소리는 작게
 _sfx_cache = {}
 
 
@@ -1953,7 +1953,7 @@ async def main():
                 rammed = [en for en in enemies if en.pos.distance_to(player.pos) < en.radius + player.radius]
                 if hit_b or bomb_hit or rammed:
                     player.hp -= 1
-                    play_sfx("hurt")
+                    play_sfx("gameover" if player.hp <= 0 else "hurt")  # 마지막 하트를 잃으면 가장 강렬한 폭발음
                     player.invuln = INVULN_TIME
                     add_fx(fx, player.pos, 20, 18, "boom" if EXPLOSION_SPRITE else "fire")  # 맞거나 부딪힌 내 비행기에 작은 폭발
                     enemy_bullets = [eb for eb in enemy_bullets if eb not in hit_b]

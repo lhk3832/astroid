@@ -184,11 +184,12 @@ Supabase의 SQL Editor에서 `supabase_hardening.sql` 내용을 한 번 실행�
 
 ## 효과음
 
-- **모든 효과음이 실제 녹음된 소리**다. Kenney의 "Sci-Fi Sounds"(CC0 = 누구나 자유롭게 써도 됨, 출처 표기는 의무가 아님, https://opengameart.org/content/sci-fi-sounds)에서 골라 잘라서 넣었다 (`import_sfx.py`, 출처는 `assets/sfx/NOTICE.txt`).
-- 소리 4종류를 각각 두 가지(a, b)로 뒀다. 게임에는 `SFX_CHOICE`에서 고른 쪽이 나온다 (지금은 전부 a).
+- **모든 효과음이 실제 녹음된 소리**다. 두 CC0(= 누구나 자유롭게 써도 됨, 출처 표기는 의무가 아님) 묶음에서 골라 잘라서 넣었다: Kenney의 "Sci-Fi Sounds"(https://opengameart.org/content/sci-fi-sounds), rubberduck의 "25 CC0 bang / firework SFX"(https://opengameart.org/content/25-cc0-bang-firework-sfx, 직접 녹음한 폭음). `import_sfx.py`가 만들고, 출처는 `assets/sfx/NOTICE.txt`에 적었다.
+- 소리 5종류를 각각 두 가지(a, b)로 뒀다. 게임에는 `SFX_CHOICE`에서 고른 쪽이 나온다 (지금은 전부 a).
   - `shoot` 총알 쏠 때 (미사일이 날아가는 소리, 한 번 쏠 때 한 번): a = 로켓 분사음으로 "슝" 하고 지나가는 소리(0.45초), b = 더 낮고 짧은 "슝"(0.4초)
-  - `bomb` 폭탄 터질 때 (내 B/S, 초록 적의 폭탄): a = 낮은 웅웅거림이 크게 이어지다 줄어드는 폭발(0.78초), b = 더 오래 이어지는 폭발(1초)
+  - `bomb` 폭탄 터질 때 (내 B/S, 초록 적의 폭탄, **평소의 폭발**): 실제로 녹음된 폭음(대포 소리)의 갈라지는 순간에 길고 낮은 울림을 겹친 약 2초의 폭발. a = 낮은 울림이 늦게 부풀어 오르는 큰 폭발(2.0초), b = 더 깊고 묵직한 대포 소리 쪽(1.8초)
   - `hit` 내가 적을 맞혔을 때 (한 프레임에 여러 번 맞아도 한 번, 0.5초): a = 작은 폭발(낮은 웅웅거림), b = 거친 소리가 더 많은 작은 폭발
   - `hurt` 내가 총알/폭탄/부딪힘에 맞았을 때: a = 금속에 부딪히는 소리에 낮은 폭발음을 깔아 묵직하게(0.63초), b = 금속 충격음 그대로(0.78초)
+  - `gameover` **게임 오버 때 한 번**(마지막 하트를 잃는 순간, hurt 대신): 여러 폭음과 낮은 울림을 가장 크게 겹친 가장 강렬한 폭발. a = 대포 두 발 + 낮은 폭발음(2.0초), b = 연속 폭발 + 낮은 폭발음(2.4초). 크기 `SFX_VOLUME["gameover"]` = 1.0 (가장 크다)
 - 들어 보기: `python sfx_preview.py` (소리마다 a, b를 차례로 들려준다). 고르는 곳은 `shooter.py` 위쪽 `SFX_CHOICE`, 크기는 `SFX_VOLUME`.
-- 다시 만들기: Kenney 묶음을 풀어서 `python import_sfx.py <풀린 폴더>` (`pip install soundfile numpy` 필요). 예전에 직접 합성했던 소리는 `python make_sfx.py <이름>`으로 다시 만들 수 있다 (인자 없이 돌리면 녹음 소리를 덮어쓰지 않도록 아무것도 만들지 않는다). 웹 빌드(pygbag)가 WAV를 받지 않고 OGG만 받는다.
+- 다시 만들기: 두 묶음을 풀어서 `python import_sfx.py <Kenney 폴더> <bang 폴더>` (`pip install soundfile numpy` 필요). 예전에 직접 합성했던 소리는 `python make_sfx.py <이름>`으로 다시 만들 수 있다 (인자 없이 돌리면 녹음 소리를 덮어쓰지 않도록 아무것도 만들지 않는다). 웹 빌드(pygbag)가 WAV를 받지 않고 OGG만 받는다.
