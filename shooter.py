@@ -367,7 +367,7 @@ SPLASH_SPRITE = load_sprite("player_1.png", SPLASH_SPRITE_SIZE)  # 첫 화면의
 EXPLOSION_SPRITE = load_sprite("explosion.png", 208)  # 적 전투기가 폭발할 때의 그림(원본 크기, 그릴 때 크기를 바꾼다)
 EXPLOSION_FIREBALL = 0.86  # 이 그림에서 불덩이(구름 부분)가 차지하는 가로 비율. 폭탄 폭발은 불덩이 크기를 폭발 반경에 맞춘다
 selected_ship = 0  # 타이틀에서 고른 비행기 번호(0~2)
-start_with_s = False  # 전투기 고르기의 숨겨진 기능(Confirmed 표시를 누름)으로 켜지면 다음 게임을 S(무지개 폭탄) 1개와 함께 시작
+start_with_s = False  # 숨겨진 기능(제목을 글자 수만큼 누름)으로 켜지면 다음 게임을 S(무지개 폭탄) 1개와 함께 시작
 
 
 def fade_color(color, alpha):
@@ -1144,6 +1144,22 @@ def draw_hover_stats(ship, cx, top, amt):
     screen.blit(layer, (cx - 100, top))
 
 
+def title_rect(cy):
+    """게임 제목(GAME_TITLE)이 그려지는 자리 (중심 높이 cy). 숨겨진 기능에서 누르는 곳이다."""
+    r = pygame.Rect(0, 0, title_font.size(GAME_TITLE)[0] + 20, 80)
+    r.center = (W // 2, cy)
+    return r
+
+
+def draw_title(cy):
+    """게임 제목을 그린다. 숨겨진 기능(제목을 글자 수만큼 누르기)이 켜졌으면 오른쪽에 무지개 폭탄 아이콘이 보인다."""
+    t = title_font.render(GAME_TITLE, True, (120, 210, 255))
+    rect = t.get_rect(center=(W // 2, cy))
+    screen.blit(t, rect)
+    if start_with_s:
+        draw_bomb_icon((rect.right + 26, rect.centery + 10), rainbow=True, r=14)
+
+
 def draw_best_box():
     """최고 점수 칸(My best Score). 첫 화면과 전투기 고르기 화면에 똑같이 나오고, 누르면 기록 화면이 열린다."""
     pygame.draw.rect(screen, (24, 28, 56), BEST_BOX, border_radius=8)
@@ -1584,9 +1600,10 @@ async def splash_screen():
     버튼(또는 ← →)으로 난이도를 고르고, 그 밖의 아무 키나 클릭을 하면 전투기 고르기 화면으로 간다.
     최고 점수 칸을 누르면 모드별 최고 기록 화면이 열린다. 왼쪽 위의 Back 버튼(또는 Esc)을 누르면 "back"을 돌려줘서 이름 화면으로 돌아간다.
     오른쪽 위의 Tutorial 버튼을 누르면 "tutorial"을 돌려줘서 조작법 3쪽을 보여 준다 (그냥 시작하면 조작법을 건너뛴다)."""
-    global game_mode
+    global game_mode, start_with_s
     stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
     names = list(MODES)
+    title_taps = 0  # 제목을 누른 횟수 (숨겨진 기능)
     while True:
         for e in pygame.event.get():
             if e.type == pygame.QUIT:
@@ -1610,7 +1627,11 @@ async def splash_screen():
                     return "back"
                 if SPLASH_TUTORIAL.collidepoint(mouse):  # Tutorial: 조작법 3쪽을 보고 시작
                     return "tutorial"
-                if clicked:  # 버튼을 누르면 그 난이도를 고른다
+                if title_rect(100).collidepoint(mouse):  # 숨겨진 기능: 제목을 글자 수(8번)만큼 누르면 S 1개를 가지고 시작
+                    title_taps += 1
+                    if title_taps == len(GAME_TITLE):
+                        start_with_s = True
+                elif clicked:  # 버튼을 누르면 그 난이도를 고른다
                     game_mode = clicked[0]
                 elif BEST_BOX.collidepoint(mouse):  # 최고 점수 칸을 누르면 기록 화면
                     await records_screen()
@@ -1622,8 +1643,7 @@ async def splash_screen():
         for x, y, s in stars:
             pygame.draw.circle(screen, (90, 90, 130), (x, (y + now * s // 40) % H), s)
 
-        t = title_font.render(GAME_TITLE, True, (120, 210, 255))
-        screen.blit(t, t.get_rect(center=(W / 2, 100)))
+        draw_title(100)
         screen.blit(small_font.render(f"Player: {player_name}", True, (150, 155, 185)), (12, 10))
         draw_nav_back()
         mx, my = pygame.mouse.get_pos()
@@ -1661,9 +1681,9 @@ async def splash_screen():
 async def title_screen():
     """전투기 고르기 화면. 비행기를 한 번 누르면 고르고, 같은 비행기를 한 번 더 누르면(2번) 그 위에 "Confirmed"가 뜬다.
     확인되면 아래 "Tap To Start" 바를 눌러(또는 Enter) 카운트다운을 거쳐 바로 시작한다. Back/Esc는 "back"을 돌려준다.
-    숨겨진 기능: 확인된 뒤 위에 뜬 "Confirmed" 표시를 selected_ship + 1번 누르면 S(무지개 폭탄)를 들고 시작한다."""
+    숨겨진 기능: 제목(GAME_TITLE)을 글자 수만큼 누르면 S(무지개 폭탄) 1개를 가지고 시작한다 (난이도 화면에서도 된다)."""
     global selected_ship, start_with_s
-    name_clicks = 0    # "Confirmed" 표시를 클릭한 횟수 (숨겨진 기능)
+    title_taps = 0    # 제목을 클릭한 횟수 (숨겨진 기능)
     stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
     hover = [0.0, 0.0, 0.0]  # 전투기마다 마우스를 올린 정도(0~1): 1.2배로 커지고 능력치 게이지가 나타난다
     started = None  # Tap To Start를 눌러 카운트다운을 시작한 시각(ms)
@@ -1677,10 +1697,8 @@ async def title_screen():
     badge = pygame.Rect(0, 0, 124, 28)  # "Confirmed" 표시 (고른 비행기 테두리 위쪽 가운데에 걸친다)
 
     def unconfirm():
-        nonlocal taps, last_tap, confirmed, name_clicks
-        global start_with_s
-        taps, last_tap, confirmed, name_clicks = 0, None, False, 0
-        start_with_s = False  # 다른 전투기를 고를 수 있으니 숨겨진 기능은 다시 켜야 한다
+        nonlocal taps, last_tap, confirmed
+        taps, last_tap, confirmed = 0, None, False
 
     while True:
         badge.center = (slot_x[selected_ship], slot_rects[selected_ship].top)
@@ -1715,9 +1733,9 @@ async def title_screen():
                 clicked = [i for i, r in enumerate(slot_rects) if r.collidepoint(mouse)]
                 if SPLASH_BACK.collidepoint(mouse):
                     return "back"
-                if confirmed and badge.collidepoint(mouse):  # 숨겨진 기능: Confirmed 표시를 N번 누르면 S를 들고 시작
-                    name_clicks += 1
-                    if name_clicks == selected_ship + 1:
+                if title_rect(110).collidepoint(mouse):  # 숨겨진 기능: 제목을 글자 수(8번)만큼 누르면 S 1개를 가지고 시작
+                    title_taps += 1
+                    if title_taps == len(GAME_TITLE):
                         start_with_s = True
                 elif clicked:  # 비행기를 누르면 고르고, 같은 비행기를 2번 누르면 확인
                     i = clicked[0]
@@ -1749,8 +1767,7 @@ async def title_screen():
             pygame.draw.circle(screen, (90, 90, 130), (x, (y + now * s // 40) % H), s)
 
         if left is None:  # 카운트다운 중에는 게임 이름과 최고 점수 칸을 지운다
-            t = title_font.render(GAME_TITLE, True, (120, 210, 255))
-            screen.blit(t, t.get_rect(center=(W / 2, 110)))
+            draw_title(110)
             draw_nav_back()
 
         # 카운트다운이 진행될수록(0→1) 게임 시작 화면과 같아진다: 비행기가 시작 위치로 내려가며 작아지고, 상단 표시가 나타난다
@@ -1807,8 +1824,6 @@ async def title_screen():
                 pygame.draw.rect(screen, (90, 235, 130), badge, 2, border_radius=8)
                 t = font.render("Confirmed", True, (210, 255, 225))
                 screen.blit(t, t.get_rect(center=badge.center))
-                if start_with_s:  # 숨겨진 기능이 켜졌다는 표시: 오른쪽에 무지개 폭탄 아이콘
-                    draw_bomb_icon((badge.right + 18, badge.centery), rainbow=True, r=11)
             # 아래 바: 확인되면 "Tap To Start" 버튼, 아직이면 안내
             bar_hover = confirmed and PRESS_BAR.collidepoint(mouse)
             pygame.draw.rect(screen, ((44, 54, 104) if bar_hover else (24, 28, 56)) if confirmed else (18, 20, 40), PRESS_BAR, border_radius=10)
@@ -1838,7 +1853,7 @@ async def main():
     global start_with_s
     bgm_play("game")  # 게임이 시작될 때 메뉴 음악이 게임 음악으로 바뀐다 (게임 오버 뒤 다시 시작해도 멈췄던 음악을 다시 튼다)
     player = Player()
-    if start_with_s:  # 전투기 고르기의 숨겨진 기능: 시작하자마자 S 1개 (한 번만)
+    if start_with_s:  # 숨겨진 기능(제목 누르기): 시작하자마자 S 1개 (한 번만)
         player.has_s = True
         start_with_s = False
     bullets, enemy_bullets, enemies, particles, items = [], [], [], [], []
