@@ -46,4 +46,5 @@ Pygame 슈팅 게임. 단일 파일 `shooter.py`, 실행은 `python shooter.py`.
 - 무적(`player.invuln`: 피격 직후, Shield)일 때 적 총알이 비행기 그림에 닿으면 피해 없이 사라진다 (main의 피격 처리 앞, 작은 불꽃 `add_fx`). 폭탄과 부딪힘은 무적이면 그대로 피해가 없다.
 - 기록 저장: `read_saved_text()`/`write_saved_text()`가 데스크톱은 `best_score.txt`, 웹은 브라우저 localStorage(`STORAGE_KEY` = astroid_best)를 쓴다 (새로고침해도 남음). 공용 순위표(`ONLINE`)가 켜져 있으면 서버가 우선이다.
 - 공용 순위표 보호: `supabase_hardening.sql`(제약, 금칙어/속도 제한 트리거, hidden/ip_hash 칸, 칸 단위 권한)을 사용자가 Supabase에서 실행한다. 그래서 `online_post`는 이름에서 허용 글자(영문/숫자/한글/공백/_.-) 밖을 빼고, 서버가 거절하면(`fail`) `online_tick`이 이름을 Guest로 바꿔 한 번만 다시 보낸다 (`_last_body`). 서버 규칙을 바꾸면 이 두 곳도 같이 맞춘다.
+- 효과음: `play_sfx(name)`(`shoot`/`bomb`/`hit`/`hurt`)이 `assets/sfx/{name}_{a|b}.ogg`를 `SFX_CHOICE`대로 불러 `SFX_VOLUME` 크기로 재생한다 (소리 장치나 파일이 없어도 예외를 삼키고 게임은 계속). 부르는 곳: 총알 쏠 때(`player.cooldown = ...` 다음), 폭탄 터질 때(`explosions.append` 두 군데), 내가 적을 맞힐 때(`hit_sound`, 프레임당 한 번), 내가 맞을 때(`player.hp -= 1` 다음). 새 소리는 `make_sfx.py`에 합성 코드를 추가하고 `.ogg`로 저장한다 (pygbag은 WAV를 거절한다).
 

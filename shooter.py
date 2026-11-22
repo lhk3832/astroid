@@ -170,6 +170,29 @@ small_font = make_font(18)
 mid_font = make_font(30, True)
 press_font = make_font(46, True)  # 첫 화면의 Press To Start 바 안 글씨
 
+# 효과음: assets/sfx/{이름}_{a 또는 b}.ogg. 소리마다 두 가지를 만들어 뒀고 아래에서 마음에 드는 쪽을 고른다 (make_sfx.py로 다시 만들 수 있다).
+SFX_CHOICE = {"shoot": "a", "bomb": "a", "hit": "a", "hurt": "a"}  # shoot 총알 쏠 때 / bomb 폭탄 터질 때 / hit 내가 적을 맞혔을 때 / hurt 내가 맞았을 때
+SFX_VOLUME = {"shoot": 0.25, "bomb": 0.7, "hit": 0.3, "hurt": 0.8}  # 소리 크기(0~1). 자주 나는 소리는 작게
+_sfx_cache = {}
+
+
+def play_sfx(name):
+    """효과음 하나를 재생한다. 소리 장치가 없거나 파일이 없어도 게임은 그대로 간다."""
+    snd = _sfx_cache.get(name, 0)
+    if snd == 0:
+        try:
+            snd = pygame.mixer.Sound(os.path.join(BASE_DIR, "assets", "sfx", "%s_%s.ogg" % (name, SFX_CHOICE[name])))
+            snd.set_volume(SFX_VOLUME[name])
+        except Exception:
+            snd = None
+        _sfx_cache[name] = snd
+    if snd:
+        try:
+            snd.play()
+        except Exception:
+            pass
+
+
 def load_sprite(filename, size, angle=0):
     """이미지를 가장 긴 변이 size(px)가 되게 불러온다. 파일이 없으면 None (도형으로 대신 그림)."""
     try:
@@ -1767,6 +1790,7 @@ async def main():
                     x = player.pos.x + (i - (player.power - 1) / 2) * gap
                     bullets.append([pygame.Vector2(x, player.pos.y - int(PLAYER_SPRITE_SIZE * 0.33)), BULLET_RADIUS])  # 총알은 비행기 코에서 나온다
                 player.cooldown = player.fire_delay
+                play_sfx("shoot")
 
             spawn -= 1
             normal_count = sum(1 for en in enemies if not en.yellow)  # 노란 적은 세지 않음
@@ -1844,6 +1868,7 @@ async def main():
                     s_charging = False
             if blast_radius:
                 explosions.append([player.pos.copy(), 30, blast_radius, 30, True])  # 마지막 True: 내가 터뜨린 폭발
+                play_sfx("bomb")
                 for en in enemies:
                     if en.pos.distance_to(player.pos) < blast_radius + en.radius:  # 폭탄에 닿은 적은 바로 사라지고, 총알로 잡은 것처럼 아이템도 떨어뜨린다
                         en.hp = 0
@@ -1888,6 +1913,7 @@ async def main():
                 bm[2] -= 1
                 if bm[2] <= 0:
                     explosions.append([bm[0].copy(), 15, BOMB_RADIUS, 15])
+                    play_sfx("bomb")
                     if bm[0].distance_to(player.pos) < BOMB_RADIUS + player.radius:
                         bomb_hit = True
             bombs = [bm for bm in bombs if bm[2] > 0]
@@ -1896,9 +1922,11 @@ async def main():
             explosions = [ex for ex in explosions if ex[1] > 0]
 
             # 플레이어 총알 vs 적
+            hit_sound = False
             for en in enemies:
                 for b in bullets:
                     if bullet_hits(en, b):
+                        hit_sound = True
                         add_fx(fx, b[0], 16, 10)  # 맞힌 자리에 작은 폭발
                         b[0].y = -999
                         en.hp -= 1
@@ -1907,6 +1935,8 @@ async def main():
                             drop_items(en, player, enemy_count, items)
                             explode_enemy(en, particles, fx)  # 쓰러지면 전투기가 크게 폭발
                         break
+            if hit_sound:
+                play_sfx("hit")
             enemies = [en for en in enemies if en.hp > 0 and en.pos.y < H + 30]
             level = 1 + int(score - bonus_total) // 150
 
@@ -1922,6 +1952,7 @@ async def main():
                 rammed = [en for en in enemies if en.pos.distance_to(player.pos) < en.radius + player.radius]
                 if hit_b or bomb_hit or rammed:
                     player.hp -= 1
+                    play_sfx("hurt")
                     player.invuln = INVULN_TIME
                     add_fx(fx, player.pos, 20, 18, "boom" if EXPLOSION_SPRITE else "fire")  # 맞거나 부딪힌 내 비행기에 작은 폭발
                     enemy_bullets = [eb for eb in enemy_bullets if eb not in hit_b]
