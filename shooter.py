@@ -919,7 +919,7 @@ def ranking_screen(mode):
             pygame.draw.rect(screen, tuple(int(c * (0.36 if i % 2 == 0 else 0.22)) for c in color), band, border_radius=6)
             rank_color = medal[i] if i < 3 else (200, 205, 225)
             if i < 3:
-                draw_medal(screen, (cols["rank"] + 6, y), i, now)
+                pass  # 메달은 줄무늬와 테두리를 다 그린 뒤 맨 위에 그린다 (아래 줄이 덮지 않게)
             else:  # 4위부터는 숫자를 메달과 같은 세로줄(가운데)에 맞춘다
                 t = font.render(str(i + 1), True, rank_color)
                 screen.blit(t, t.get_rect(center=(cols["rank"] + 6, y)))
@@ -942,6 +942,8 @@ def ranking_screen(mode):
                 screen.blit(t, t.get_rect(midleft=(cols["player"], y)))
 
         pygame.draw.rect(screen, tuple(int(c * 0.7) for c in color), pygame.Rect(30, 127, 740, 33 * RANK_SIZE + 3), 2, border_radius=8)  # 순위표 테두리
+        for i in range(3):  # 1~3위 메달: 줄무늬와 테두리 위에
+            draw_medal(screen, (cols["rank"] + 6, 142 + i * 33), i, now)
         hover = RECORDS_BACK.collidepoint(pygame.mouse.get_pos()[0] / scale, pygame.mouse.get_pos()[1] / scale)
         pygame.draw.rect(screen, tuple(int(c * (0.45 if hover else 0.3)) for c in color), RECORDS_BACK, border_radius=10)
         pygame.draw.rect(screen, color, RECORDS_BACK, 2, border_radius=10)
