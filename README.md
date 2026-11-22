@@ -187,7 +187,7 @@ Supabase의 SQL Editor에서 `supabase_hardening.sql` 내용을 한 번 실행�
 - 소리 4종류를 각각 두 가지(a, b)로 만들어 `assets/sfx/`에 뒀다. 게임에는 `SFX_CHOICE`에서 고른 쪽이 나온다 (지금은 전부 a).
   - `shoot` 총알 쏠 때 (한 번 쏠 때 한 번): a = 높은 소리에서 빠르게 내려오는 레이저 "퓨", b = 짧고 부드러운 "삑"
   - `bomb` 폭탄 터질 때 (내 B/S, 초록 적의 폭탄): a = 탕! 하고 단단하게 터지는 폭발, b = 낮게 울리고 더 긴 묵직한 폭발
-  - `hit` 내가 적을 맞혔을 때 (한 프레임에 여러 번 맞아도 한 번): a = 퍽(둔한 타격음), b = 띠링(맑고 올라가는 소리)
+  - `hit` 내가 적을 맞혔을 때 (한 프레임에 여러 번 맞아도 한 번): 둘 다 약한 폭탄이 터지는 "펑!" (bomb보다 작고 짧다): a = 잡음이 확 터지는 또렷한 펑, b = 더 둥글고 낮은 퐁
   - `hurt` 내가 맞았을 때 (적 총알/폭탄/부딪힘): a = 거친 톱니파가 낮게 떨어지는 "우웅", b = 떨리며 내려가는 "워어"
 - 들어 보기: `python sfx_preview.py` (소리마다 a, b를 차례로 들려준다). 고르는 곳은 `shooter.py` 위쪽 `SFX_CHOICE`, 크기는 `SFX_VOLUME`.
 - 소리는 `python make_sfx.py`가 직접 합성해서 `.ogg`로 만든다 (`pip install soundfile numpy` 필요). 웹 빌드(pygbag)가 WAV를 받지 않고 OGG만 받는다.

@@ -4,10 +4,12 @@
 import math
 import os
 import random
+import sys
 
 SR = 22050  # 샘플 속도 (작고 가볍게)
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "sfx")
 random.seed(7)  # 만들 때마다 같은 소리가 나오게
+ONLY = sys.argv[1:]  # 예: python make_sfx.py hit  -> hit_*만 새로 저장한다 (나머지 소리 파일은 그대로 둔다)
 
 
 def sweep(f0, f1, dur, curve=1.0):
@@ -76,6 +78,8 @@ def scale(a, k):
 
 
 def save(name, samples, peak=0.85):
+    if ONLY and not any(name.startswith(o) for o in ONLY):
+        return
     import numpy as np
     import soundfile as sf
     m = max(abs(v) for v in samples) or 1.0
@@ -114,16 +118,18 @@ sub = mul(sine(sweep(62, 38, 1.2, 0.7)), env(n, 3.2, 0.015))
 crackle = [(random.uniform(-1, 1) if random.random() < 0.012 else 0.0) * math.exp(-i / SR * 2.2) for i in range(n)]
 save("bomb_b", mix(scale(rumble, 1.3), scale(sub, 1.0), scale(lowpass_noise(n, 0.5), 0.0), scale(crackle, 0.35)))
 
-# ── 내가 적을 맞혔을 때 ────────────────────────────────
-# a: 퍽 (짧은 잡음 + 내려가는 둔한 소리)
-n = int(SR * 0.1)
-puff = mul(lowpass_noise(n, 0.6), env(n, 55, 0.001))
-body = mul(sine(sweep(820, 460, 0.1)), env(n, 40, 0.001))
-save("hit_a", mix(scale(puff, 0.8), body))
-# b: 띠링 (올라가는 맑은 소리)
-ph = sweep(1300, 2300, 0.1)
-bb = mul(mix(sine(ph), scale([math.sin(2 * p) for p in ph], 0.3)), env(len(ph), 30, 0.002))
-save("hit_b", bb)
+# ── 내가 적을 맞혔을 때: 약한 폭탄이 터지는 "펑!" (bomb보다 작고 짧다. 자주 나는 소리라 짧게) ──
+# a: 펑! (잡음이 확 터졌다 빠르게 낮아지고, 낮은 쿵이 받쳐 준다)
+n = int(SR * 0.25)
+alphas = [0.5 * math.exp(-i / SR * 22) + 0.05 for i in range(n)]
+puff = mul(lowpass_noise(n, alphas), env(n, 17, 0.001))
+thump = mul(sine(sweep(170, 62, 0.25, 0.5)), env(n, 19, 0.001))
+save("hit_a", mix(scale(puff, 0.9), scale(thump, 1.0)))
+# b: 퐁! (더 둥글고 낮은 펑: 낮은 소리가 중심이고 잡음은 부드럽다)
+n = int(SR * 0.28)
+body = mul(sine(sweep(120, 52, 0.28, 0.6)), env(n, 13, 0.002))
+soft = mul(lowpass_noise(n, 0.13), env(n, 24, 0.001))
+save("hit_b", mix(body, scale(soft, 0.9)))
 
 # ── 내가 공격받았을 때 ─────────────────────────────────
 # a: 거친 톱니파가 낮게 떨어지는 "우웅" + 잡음
