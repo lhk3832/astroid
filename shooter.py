@@ -52,6 +52,9 @@ S_DROP_RATE = 0.20 / 3    # 적 미사일이 정확히 S_UNLOCK_COUNT개일 때 
 S_LATE_DROP_RATE = 0.02 / 3  # 그 이후(더 늘어난 뒤) (약 0.67%)
 S_WITH_B_FACTOR = 0.25    # B를 가지고 있을 때 S 드롭 확률에 곱하는 비율 (0.25 = B가 있으면 1/4로 줄어듦)
 BLAST_RADIUS = 600  # S 폭발 반경 (B의 4배, 화면 대부분을 덮는다)
+SP_NEED_B = 3  # 무지개 S 기술에 필요한 B 개수 (S도 1개 필요)
+SP_HOLD_FRAMES = FPS  # 무지개 S 기술은 오른쪽 버튼을 이만큼(1초) 꾹 눌러야 발동한다 (S 0.5초보다 길다)
+SP_POPUP_FRAMES = 110  # 발동하면 화면 가운데에 큰 무지개 S가 보이는 시간(프레임)
 R_BONUS_COUNT = 3     # 체력이 꽉 찬 상태로 R을 이만큼 먹으면
 R_BONUS_POINTS = 100  # 이만큼 보너스 점수 (적이 늘어나는 난이도에는 반영하지 않는다)
 P_BONUS_COUNT = 3     # 미사일이 최대인 상태로 P를 이만큼 먹으면
@@ -174,6 +177,7 @@ title_font = make_font(84, True)
 small_font = make_font(18)
 mid_font = make_font(30, True)
 press_font = make_font(46, True)  # 첫 화면의 Press To Start 바 안 글씨
+special_font = make_font(190, True)  # 무지개 S 기술을 쓸 때 화면 가운데에 크게 보이는 글자
 
 # 효과음: assets/sfx/{이름}_{a 또는 b}.ogg. 소리마다 두 가지를 만들어 뒀고 아래에서 마음에 드는 쪽을 고른다 (make_sfx.py로 다시 만들 수 있다).
 SFX_CHOICE = {"shoot": "a", "bomb": "a", "hit": "a", "hurt": "a", "gameover": "a"}  # shoot 총알 쏠 때 / bomb 폭탄 터질 때 / hit 내가 적을 맞혔을 때 / hurt 내가 맞았을 때 / gameover 게임 오버
@@ -734,6 +738,31 @@ def rainbow(k, a=255):
     return (int(r * 255), int(g * 255), int(b * 255), a)
 
 
+def rainbow_text(fnt, text, phase=0.0):
+    """무지개색으로 칠한 글자 (왼쪽에서 오른쪽으로 색이 변하고, phase로 색이 흘러간다)."""
+    img = fnt.render(text, True, (255, 255, 255))
+    w, h = img.get_size()
+    grad = pygame.Surface((w, h), pygame.SRCALPHA)
+    for x in range(w):
+        pygame.draw.line(grad, rainbow(x / max(1, w) + phase)[:3] + (255,), (x, 0), (x, h))
+    img.blit(grad, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+    return img
+
+
+def special_plan():
+    """무지개 S 기술(B 3개 + S 1개): 지도 곳곳에서 B 폭발 3번이 시간차로 터지고, 마지막에 S 폭발이 터진다.
+    [(늦게 시작하는 프레임, 자리, 폭발 반경)]. B는 지도를 세로 세 구역으로 나눠 구역마다 하나씩 흩어서 터뜨린다."""
+    plan = []
+    bands = [0, 1, 2]
+    random.shuffle(bands)
+    for k, band in enumerate(bands):
+        x = random.uniform(W * (0.06 + 0.3 * band), W * (0.06 + 0.3 * band + 0.24))
+        y = random.uniform(110, H - 90)
+        plan.append((k * 14, pygame.Vector2(x, y), B_RADIUS))
+    plan.append((54, pygame.Vector2(random.uniform(W * 0.3, W * 0.7), random.uniform(H * 0.25, H * 0.6)), BLAST_RADIUS))
+    return plan
+
+
 def draw_player_blast(ex):
     """내가 터뜨린 폭탄(B, S)의 폭발 그림. 폭발 이미지(assets/explosion.png)가 커지며 사라진다.
     크기는 예전 원과 같다: 불덩이 반경이 폭발 반경 ex[2]의 약 0.55배에서 1.15배까지 커진다 (B 150px, S 600px).
@@ -855,7 +884,12 @@ def draw_hud(surf, score, level, player):
     y = 100
     if player.has_s:
         draw_bomb_icon((24, y), rainbow=True, surf=surf)
-        surf.blit(font.render("Hold Right Click!", True, (180, 220, 255)), (44, y - 13))
+        if player.b_count >= SP_NEED_B:  # B 3개 + S 1개: 무지개 S 기술을 쓸 수 있다 (이름을 무지개색 S로 보여 준다)
+            sg = rainbow_text(mid_font, "S", pygame.time.get_ticks() / 900)
+            surf.blit(sg, (44, y - sg.get_height() // 2))
+            surf.blit(font.render("Hold Right Click!", True, (255, 240, 170)), (44 + sg.get_width() + 8, y - 13))
+        else:
+            surf.blit(font.render("Hold Right Click!", True, (180, 220, 255)), (44, y - 13))
         y += 36
     if player.rerolls:  # Change Ticket을 가지고 있으면 개수 표시 (상점에서 사용)
         draw_change_icon((24, y), 10, surf=surf)
@@ -1525,6 +1559,7 @@ CONTROL_PAGES = [
         ("Red", "Red enemies", "The basic ones. They often drop R (heal)"),
         ("Green", "Green enemies", "They throw bombs, so keep away from the blast"),
         ("Yellow", "Yellow enemies", "Fast and tough, but they drop coins"),
+        ("S", "Rainbow S", "With 3 B and 1 S, hold Right Click 1s: bombs go off everywhere"),
     ]),
 ]
 CONTROLS_NEXT = pygame.Rect(W // 2 - 130, 505, 260, 50)
@@ -1889,6 +1924,29 @@ async def main():
     yellow_spawn = 0
     fade = 0  # 보너스 라운드로 가기 전 적이 사라지는 중이면 남은 프레임
     s_charging, s_charge = False, 0  # S를 꾹 눌러 충전하는 중인가, 지금까지 누른 프레임
+    sp_charging, sp_charge = False, 0  # 무지개 S 기술(B 3개 + S 1개)을 꾹 눌러 충전하는 중인가, 지금까지 누른 프레임
+    special = None  # 발동한 무지개 S 기술: {"t": 지난 프레임, "plan": special_plan(), "fired": [...]}
+
+    def detonate(center, radius):
+        """내 폭탄 하나가 center에서 터진다: 폭발 그림과 소리, 범위 안 적은 바로 처치하고 (총알로 잡은 것처럼 점수와 아이템),
+        적 총알은 폭발이 남아 있는 동안 폭발 범위에서 지워진다. 일반 B/S와 무지개 S 기술이 같이 쓴다."""
+        nonlocal score, enemies
+        center = pygame.Vector2(center)
+        bursts = []  # S(큰 폭발)만: 사방에서 시간차로 터지는 작은 폭발 [(자리 차이, 늦게 시작하는 프레임, 크기 배율)]
+        if radius > 200:
+            for _ in range(8):
+                ang, dist = random.uniform(0, math.tau), random.uniform(0.2, 0.85) * radius
+                bursts.append((pygame.Vector2(math.cos(ang), math.sin(ang)) * dist, random.randint(0, 14), random.uniform(0.55, 1.0)))
+        explosions.append([center, 30, radius, 30, True, bursts])  # 마지막 True: 내가 터뜨린 폭발
+        play_explosion()
+        for en in enemies:
+            if en.pos.distance_to(center) < radius + en.radius:  # 폭탄에 닿은 적은 바로 사라지고, 총알로 잡은 것처럼 아이템도 떨어뜨린다
+                en.hp = 0
+                score += kill_points(en)
+                drop_items(en, player, enemy_count, items)
+                explode_enemy(en, particles, fx)
+        enemies = [en for en in enemies if en.hp > 0]
+
     saved = False  # 이번 판의 점수를 순위표에 이미 넣었는가
     star_ms = 0
 
@@ -1971,6 +2029,9 @@ async def main():
         bgm_tick(game_over, paused)
         if paused or shop or game_over:
             s_charging = False  # 멈추거나 끝나면 S 충전은 취소
+            sp_charging = False
+            if shop or game_over:
+                special = None  # 상점이 열리거나 게임이 끝나면 남은 무지개 S 폭발은 취소
         if was_shop and not shop:  # 다음 라운드는 처음처럼 위에서부터 적이 나타난다
             spawn = 0
             yellow_spawn = YELLOW_SPAWN_INTERVAL
@@ -2121,7 +2182,24 @@ async def main():
             enemy_count = min(m["enemy_max_count"], enemy_count)
 
             blast_radius = None
-            if blast and player.b_count > 0:  # B가 있으면 B부터 사용
+            sp_ready = player.b_count >= SP_NEED_B and player.has_s  # B 3개 + S 1개면 무지개 S 기술을 쓸 수 있다
+            if sp_charging:  # 무지개 S 기술 충전 중: 꾹 누르면 발동, 중간에 떼면 그냥 B를 터뜨린 것(클릭)으로 친다
+                if sp_ready and pygame.mouse.get_pressed()[2]:
+                    sp_charge += 1
+                    if sp_charge >= SP_HOLD_FRAMES:
+                        sp_charging = False
+                        player.b_count -= SP_NEED_B
+                        player.has_s = False
+                        special = {"t": 0, "plan": special_plan(), "fired": [False] * 4}
+                else:
+                    sp_charging = False
+                    if player.b_count > 0:
+                        player.b_count -= 1
+                        blast_radius = B_RADIUS
+            elif blast and sp_ready:  # B 3개 + S 1개일 때는 누르자마자 B가 터지지 않고, 꾹 누르는지 본다
+                sp_charging = True
+                sp_charge = 0
+            elif blast and player.b_count > 0:  # B가 있으면 B부터 사용
                 player.b_count -= 1
                 blast_radius = B_RADIUS  # 폭발 범위에 닿은 적 총알만 사라진다 (화면 전체를 지우지 않는다)
             elif blast and player.has_s and not s_charging:  # S는 오른쪽 버튼을 꾹 눌러야 한다: 누르는 순간부터 충전 시작
@@ -2137,20 +2215,15 @@ async def main():
                 else:
                     s_charging = False
             if blast_radius:
-                bursts = []  # S(큰 폭발)만: 사방에서 시간차로 터지는 작은 폭발 [(자리 차이, 늦게 시작하는 프레임, 크기 배율)]
-                if blast_radius > 200:
-                    for _ in range(8):
-                        ang, dist = random.uniform(0, math.tau), random.uniform(0.2, 0.85) * blast_radius
-                        bursts.append((pygame.Vector2(math.cos(ang), math.sin(ang)) * dist, random.randint(0, 14), random.uniform(0.55, 1.0)))
-                explosions.append([player.pos.copy(), 30, blast_radius, 30, True, bursts])  # 마지막 True: 내가 터뜨린 폭발
-                play_explosion()
-                for en in enemies:
-                    if en.pos.distance_to(player.pos) < blast_radius + en.radius:  # 폭탄에 닿은 적은 바로 사라지고, 총알로 잡은 것처럼 아이템도 떨어뜨린다
-                        en.hp = 0
-                        score += kill_points(en)
-                        drop_items(en, player, enemy_count, items)
-                        explode_enemy(en, particles, fx)
-                enemies = [en for en in enemies if en.hp > 0]
+                detonate(player.pos, blast_radius)
+            if special:  # 무지개 S 기술: 계획대로 지도 곳곳에서 시간차로 터진다
+                special["t"] += 1
+                for k, (delay, pos, radius) in enumerate(special["plan"]):
+                    if not special["fired"][k] and special["t"] >= delay:
+                        special["fired"][k] = True
+                        detonate(pos, radius)
+                if all(special["fired"]) and special["t"] > SP_POPUP_FRAMES:
+                    special = None
 
             for en in enemies:
                 en.update()
@@ -2303,6 +2376,17 @@ async def main():
             en.draw(enemy_alpha)
         if not game_over:  # 내 비행기를 폭발 그림보다 먼저 그려서, 내가 맞았을 때의 폭발이 비행기 위에 보이게 한다
             player.draw()
+            if sp_charging:  # 무지개 S 충전 표시: 무지개 고리가 1초 동안 한 바퀴 채워지고 위에 무지개 S(기술 이름)가 뜬다
+                pygame.draw.circle(screen, (60, 70, 110), player.pos, 52, 3)
+                steps = int(72 * min(1.0, sp_charge / SP_HOLD_FRAMES))
+                for i in range(steps):
+                    a0 = -math.pi / 2 + math.tau * i / 72
+                    a1 = -math.pi / 2 + math.tau * (i + 1.4) / 72
+                    pygame.draw.line(screen, rainbow(i / 72 + pygame.time.get_ticks() / 900)[:3],
+                                     (player.pos.x + math.cos(a0) * 52, player.pos.y + math.sin(a0) * 52),
+                                     (player.pos.x + math.cos(a1) * 52, player.pos.y + math.sin(a1) * 52), 6)
+                sg = rainbow_text(mid_font, "S", pygame.time.get_ticks() / 600)
+                screen.blit(sg, (player.pos.x - sg.get_width() / 2, player.pos.y - 52 - sg.get_height() - 6))
             if s_charging:  # S 충전 표시: 비행기 둘레의 고리가 0.5초 동안 한 바퀴 채워진다
                 ring = pygame.Rect(0, 0, 90, 90)
                 ring.center = player.pos
@@ -2319,6 +2403,13 @@ async def main():
             t.set_alpha(min(255, bonus_flash * 8))
             screen.blit(t, t.get_rect(center=(W / 2, 150 - (90 - bonus_flash) * 0.3)))
 
+        if special and special["t"] < SP_POPUP_FRAMES:  # 무지개 S 기술을 쓰면 화면 가운데에 큰 무지개 S (기술 이름)
+            q = special["t"] / SP_POPUP_FRAMES
+            img = rainbow_text(special_font, "S", pygame.time.get_ticks() / 500)
+            k = 0.6 + 0.5 * min(1.0, q * 6) + 0.08 * math.sin(special["t"] * 0.3)  # 처음에 확 커진다
+            img = pygame.transform.rotozoom(img, 0, k)
+            img.set_alpha(int(255 * min(1.0, q * 12) * (1 - max(0.0, (q - 0.55) / 0.45))))
+            screen.blit(img, img.get_rect(center=(W // 2, H // 2 - 30)))
         if game_over:
             t = big.render("GAME OVER", True, (255, 90, 90))
             screen.blit(t, t.get_rect(center=(W / 2, H / 2 - 20)))
