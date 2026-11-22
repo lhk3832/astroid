@@ -81,6 +81,7 @@ YELLOW_COIN_DROP_RATE = 0.35   # 노란 적 처치 시 코인 아이템이 나�
 MAGNET_RADIUS = 60  # 이 거리 안에 들어온 아이템은 나에게 빨려 들어옴
 MAGNET_ACCEL = 0.9      # 자석에 끌릴 때의 가속(px/프레임²). 가까울수록 최대 2배
 MAGNET_MAX_SPEED = 14   # 끌려오는 속도의 상한(px/프레임)
+MAGNET_MAX_FRAMES = 120   # 끌리기 시작한 아이템이 이 프레임(2초)을 넘기면 안전장치로 바로 붙는다 (보통은 그 전에 닿는다)
 COIN_VALUE = 100      # 코인 아이템 1개가 주는 코인
 BONUS_INTERVAL = 45    #보너스 라운드(상점)가 열리는 간격(초, 플레이 시간 기준)
 SHOP_SLOTS = 3  # 상점에는 한 번에 물건이 3개만 나온다
@@ -629,24 +630,27 @@ def kill_points(en):
 
 
 def move_item(it, player):
-    """아이템 한 개를 한 프레임 움직인다. 아이템은 [위치, 종류, 속도, 끌리는 중인가].
+    """아이템 한 개를 한 프레임 움직인다. 아이템은 [위치, 종류, 상태, 끌리는 중인가].
     평소에는 천천히 떨어지다가 내 주변(MAGNET_RADIUS)에 들어오면 자석에 붙듯 끌리기 시작한다.
-    한 번 끌리기 시작한 아이템은 내가 멀리 도망가도 거리와 상관없이 계속 따라와서 결국 붙는다
-    (끌리는 속도의 상한 MAGNET_MAX_SPEED가 내 이동 속도 상한보다 빨라서 놓치지 않는다)."""
+    한 번 끌리기 시작한 아이템은 내가 어디로 움직이든 거리와 상관없이 **반드시 나에게 닿아서 먹힌다**:
+    속도를 쌓아서 날리면 내 옆을 빙빙 도는 경우가 있어서, 매 프레임 나를 향해 곧장 날아오고(속도만 점점 빨라진다),
+    한 걸음에 닿을 거리면 그대로 내 위치에 붙는다 (지나치지 않는다). 끌리는 속도 상한 MAGNET_MAX_SPEED가 내 이동 속도 상한보다 빨라서 도망갈 수 없다.
+    상태 it[2]는 Vector2(지금 속도, 끌린 프레임 수)다."""
     while len(it) < 4:
-        it.append(pygame.Vector2(0, 0) if len(it) == 2 else False)  # it[2]: 끌릴 때의 속도, it[3]: 끌리는 중인가
-    vel = it[2]
+        it.append(pygame.Vector2(0, 0) if len(it) == 2 else False)  # it[2]: (끌릴 때의 속도, 끌린 프레임 수), it[3]: 끌리는 중인가
     to_player = player.pos - it[0]
     dist = to_player.length()
     if not it[3] and 0 < dist < MAGNET_RADIUS:
         it[3] = True  # 이제부터 계속 따라온다
-    if it[3] and dist > 0:
+    if it[3]:
         pull = max(1.0, min(2.0, 2 - dist / MAGNET_RADIUS))  # 가까울수록 세게(최대 2배), 멀어도 최소 1배
-        vel += to_player.normalize() * MAGNET_ACCEL * pull
-        if vel.length() > MAGNET_MAX_SPEED:
-            vel.scale_to_length(MAGNET_MAX_SPEED)
-        it[0] += vel
-    elif not it[3]:
+        it[2].x = min(MAGNET_MAX_SPEED, it[2].x + MAGNET_ACCEL * pull)  # 점점 빨라진다
+        it[2].y += 1
+        if dist <= it[2].x or it[2].y > MAGNET_MAX_FRAMES:  # 한 걸음에 닿거나, 너무 오래 걸리면(안전장치) 바로 붙는다
+            it[0].update(player.pos)
+        else:
+            it[0] += to_player / dist * it[2].x
+    else:
         it[0].y += 2  # 끌리기 전에는 천천히 떨어진다
 
 
