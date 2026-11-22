@@ -31,6 +31,9 @@ RED_DROP_RATES = (0.01, 0.033)    # (P, R) 빨간 적: R이 잘 나옴
 GREEN_DROP_RATES = (0.10, 0.03)  # (P, R) 초록 적: P가 잘 나옴
 INVULN_TIME = 5 * FPS
 BULLET_RADIUS = 4
+PLAYER_HIT_W = 18  # 내 비행기의 피격 범위 반폭(px). 날개 쪽까지 (비행기 그림 72px). 적 총알은 크기(ENEMY_BULLET_RADIUS)만큼 더해서 닿으면 맞는다
+PLAYER_HIT_H = 26  # 내 비행기의 피격 범위 반높이(px). 코부터 꼬리까지
+ENEMY_BULLET_RADIUS = 5  # 적 총알의 크기(그림과 판정)
 MAX_POWER = 5
 ENEMY_SCALE_SCORE = 100
 START_POWER = 2
@@ -358,6 +361,16 @@ def save_best(score, level=0, seconds=0):
             json.dump(rankings, f, ensure_ascii=False)
     except OSError:
         pass  # 저장하지 못해도 게임은 계속한다
+
+
+def enemy_bullet_hits_player(eb, player):
+    """적 총알 eb가 내 비행기 그림(직사각형 범위)에 닿았는가. 빠른 총알이 한 프레임에 건너뛰지 않게 이번 프레임에 지나온 길을 따라 여러 점을 본다."""
+    for k in range(4):
+        pos = eb[0] - eb[1] * (k / 3)
+        if (abs(pos.x - player.pos.x) < PLAYER_HIT_W + ENEMY_BULLET_RADIUS
+                and abs(pos.y - player.pos.y) < PLAYER_HIT_H + ENEMY_BULLET_RADIUS):
+            return True
+    return False
 
 
 def bullet_hits(en, b):
@@ -1840,7 +1853,7 @@ async def main():
             # 피격 처리
             if not player.invuln:
                 # 총알/폭탄에 맞거나 적 비행기와 부딪히면 체력이 깎인다. 부딪힌 적도 함께 피해를 입는다
-                hit_b = [eb for eb in enemy_bullets if eb[0].distance_to(player.pos) < 12]
+                hit_b = [eb for eb in enemy_bullets if enemy_bullet_hits_player(eb, player)]
                 rammed = [en for en in enemies if en.pos.distance_to(player.pos) < en.radius + player.radius]
                 if hit_b or bomb_hit or rammed:
                     player.hp -= 1
@@ -1905,7 +1918,7 @@ async def main():
             t = font.render("$" if kind == "C" else kind, True, edge)
             screen.blit(t, t.get_rect(center=pos))
         for eb in enemy_bullets:
-            pygame.draw.circle(screen, fade_color((255, 160, 60), enemy_alpha), eb[0], 5)
+            pygame.draw.circle(screen, fade_color((255, 160, 60), enemy_alpha), eb[0], ENEMY_BULLET_RADIUS)
         for en in enemies:
             en.draw(enemy_alpha)
         if not game_over:  # 내 비행기를 폭발 그림보다 먼저 그려서, 내가 맞았을 때의 폭발이 비행기 위에 보이게 한다
