@@ -520,9 +520,30 @@ def _send_score(body):
         pass
 
 
+TITLE_TAP_WAIT = 500  # 제목을 마지막으로 누른 뒤 이만큼(ms) 쉬면 그동안 누른 횟수를 확인한다
+_title_tap = [0, 0]  # [연속으로 누른 횟수, 마지막으로 누른 시각(ms)]
+
+
+def title_tap():
+    """제목을 한 번 눌렀다 (숨겨진 기능). 횟수만 모아 두고, 확인은 title_tap_tick이 쉬는 시간이 지난 뒤에 한다."""
+    _title_tap[0] += 1
+    _title_tap[1] = pygame.time.get_ticks()
+
+
+def title_tap_tick():
+    """프레임마다: 제목을 마지막으로 누른 뒤 0.5초가 지났으면, 연속으로 누른 횟수가 정확히 글자 수(8번)일 때만 S 1개로 시작하는 표시를 켠다.
+    (8번보다 많거나 적으면 아무 일도 없고 횟수를 처음부터 다시 센다. 그래서 표시가 뜨는지로 정확히 8번 눌렀는지 알 수 있다.)"""
+    global start_with_s
+    if _title_tap[0] and pygame.time.get_ticks() - _title_tap[1] >= TITLE_TAP_WAIT:
+        if _title_tap[0] == len(GAME_TITLE):
+            start_with_s = True
+        _title_tap[0] = 0
+
+
 def frame_hook():
-    """모든 화면 루프가 프레임 끝에 부른다: 음악 크기 조절 + 공용 순위표 갱신."""
+    """모든 화면 루프가 프레임 끝에 부른다: 음악 크기 조절 + 제목 누르기 확인 + 공용 순위표 갱신."""
     bgm_update()
+    title_tap_tick()
     online_tick()
 
 
@@ -1395,7 +1416,6 @@ async def name_screen():
     칸을 클릭하면 이름을 입력할 수 있고(Enter로 확인), 버튼을 누르면 이름 없이(Guest) 시작한다."""
     global player_name, is_guest, start_with_s
     stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
-    title_taps = 0  # 제목을 누른 횟수 (숨겨진 기능)
     text = "" if player_name == "Guest" else player_name  # 다시 돌아오면 지난 이름을 채워 둔다
     active = False  # 입력 칸을 클릭해서 입력 중인가
     while True:
@@ -1411,9 +1431,7 @@ async def name_screen():
                     pygame.key.stop_text_input()
                     return
                 if title_rect(100).collidepoint(mouse):  # 숨겨진 기능: 제목을 글자 수(8번)만큼 누르면 S 1개로 시작. 입력 칸의 선택(active)은 그대로 둔다
-                    title_taps += 1
-                    if title_taps == len(GAME_TITLE):
-                        start_with_s = True
+                    title_tap()  # 연속으로 8번 누르고 0.5초 쉬면 켜진다 (title_tap_tick)
                     continue
                 active = NAME_BOX.collidepoint(mouse)
                 if active:
@@ -1608,7 +1626,6 @@ async def splash_screen():
     global game_mode, start_with_s
     stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
     names = list(MODES)
-    title_taps = 0  # 제목을 누른 횟수 (숨겨진 기능)
     while True:
         for e in pygame.event.get():
             if e.type == pygame.QUIT:
@@ -1632,10 +1649,8 @@ async def splash_screen():
                     return "back"
                 if SPLASH_TUTORIAL.collidepoint(mouse):  # Tutorial: 조작법 3쪽을 보고 시작
                     return "tutorial"
-                if title_rect(100).collidepoint(mouse):  # 숨겨진 기능: 제목을 글자 수(8번)만큼 누르면 S 1개를 가지고 시작
-                    title_taps += 1
-                    if title_taps == len(GAME_TITLE):
-                        start_with_s = True
+                if title_rect(100).collidepoint(mouse):  # 숨겨진 기능: 제목을 연속으로 글자 수(8번)만큼 누르고 0.5초 쉬면 S 1개를 가지고 시작
+                    title_tap()  # 연속으로 8번 누르고 0.5초 쉬면 켜진다 (title_tap_tick)
                 elif clicked:  # 버튼을 누르면 그 난이도를 고른다
                     game_mode = clicked[0]
                 elif BEST_BOX.collidepoint(mouse):  # 최고 점수 칸을 누르면 기록 화면
@@ -1686,9 +1701,8 @@ async def splash_screen():
 async def title_screen():
     """전투기 고르기 화면. 비행기를 한 번 누르면 고르고, 같은 비행기를 한 번 더 누르면(2번) 그 위에 "Confirmed"가 뜬다.
     확인되면 아래 "Tap To Start" 바를 눌러(또는 Enter) 카운트다운을 거쳐 바로 시작한다. Back/Esc는 "back"을 돌려준다.
-    숨겨진 기능: 제목(GAME_TITLE)을 글자 수만큼 누르면 S(무지개 폭탄) 1개를 가지고 시작한다 (이름 화면, 난이도 화면에서도 된다)."""
+    숨겨진 기능: 제목(GAME_TITLE)을 연속으로 글자 수만큼 누르고 0.5초 쉬면 S(무지개 폭탄) 1개를 가지고 시작한다 (이름 화면, 난이도 화면에서도 된다)."""
     global selected_ship, start_with_s
-    title_taps = 0    # 제목을 클릭한 횟수 (숨겨진 기능)
     stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
     hover = [0.0, 0.0, 0.0]  # 전투기마다 마우스를 올린 정도(0~1): 1.2배로 커지고 능력치 게이지가 나타난다
     started = None  # Tap To Start를 눌러 카운트다운을 시작한 시각(ms)
@@ -1738,10 +1752,8 @@ async def title_screen():
                 clicked = [i for i, r in enumerate(slot_rects) if r.collidepoint(mouse)]
                 if SPLASH_BACK.collidepoint(mouse):
                     return "back"
-                if title_rect(110).collidepoint(mouse):  # 숨겨진 기능: 제목을 글자 수(8번)만큼 누르면 S 1개를 가지고 시작
-                    title_taps += 1
-                    if title_taps == len(GAME_TITLE):
-                        start_with_s = True
+                if title_rect(110).collidepoint(mouse):  # 숨겨진 기능: 제목을 연속으로 글자 수(8번)만큼 누르고 0.5초 쉬면 S 1개를 가지고 시작
+                    title_tap()  # 연속으로 8번 누르고 0.5초 쉬면 켜진다 (title_tap_tick)
                 elif clicked:  # 비행기를 누르면 고르고, 같은 비행기를 2번 누르면 확인
                     i = clicked[0]
                     if i == last_tap:
