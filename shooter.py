@@ -179,53 +179,110 @@ SFX_VOLUME = {"shoot": 0.2, "bomb": 0.7, "hit": 0.5, "hurt": 0.5, "gameover": 1.
 _sfx_cache = {}
 
 
-# 배경음악: assets/music/bgm_{a 또는 b}.ogg (make_bgm.py가 작곡해서 만든 곡, 계속 반복한다). 게임 오버 때는 서서히 줄어들고 멈춘다
+# 배경음악: assets/music/{bgm_a,bgm_b,menu_a,menu_b}.ogg (make_bgm.py가 작곡해서 만든 곡, 계속 반복한다).
+# 메뉴 곡과 게임 곡을 따로 채널에 틀고 크기를 조절해서, 카운트다운 동안 메뉴 곡이 서서히 작아지고 게임 곡이 서서히 커지게 한다.
 BGM_CHOICE = "a"  # 게임 중 음악: a = Starfighter (빠르고 박력 있는 곡), b = Deep Space (느리고 깊은 곡)
 MENU_BGM_CHOICE = "a"  # 메뉴 화면 음악: a = Launch Bay (밝고 따뜻하게 출격을 기다리는 곡), b = Star Map (신비롭고 조용한 곡)
 BGM_VOLUME = 0.35  # 배경음악 크기(0~1). 효과음보다 작게
 muted = False  # M 키로 켜고 끄는 음소거 (배경음악과 효과음 모두)
 _bgm_gain = 1.0  # 일시정지 때 줄이거나 게임 오버 때 서서히 줄이는 비율(0~1)
-_bgm_kind = None  # 지금 나오는 음악 종류: "menu" 또는 "game"
+BGM_CHANNEL = {"menu": 0, "game": 1}  # 음악 전용 채널 (효과음은 나머지 채널을 쓴다)
+_bgm_snd = {}  # 종류 -> 불러 둔 Sound
+_bgm = {}  # 종류 -> {"vol": 지금 섞인 정도(0~1), "target": 목표(0 또는 1), "rate": 초당 변하는 양}
+_bgm_last = [0]
+try:
+    pygame.mixer.set_reserved(2)  # 0, 1번 채널은 음악 전용
+except Exception:
+    pass
+
+
+def _bgm_sound(kind):
+    """kind("menu"/"game")의 곡을 읽어 둔다 (한 번만 읽는다. 없으면 None)."""
+    if kind not in _bgm_snd:
+        try:
+            name = ("menu_" + MENU_BGM_CHOICE) if kind == "menu" else ("bgm_" + BGM_CHOICE)
+            _bgm_snd[kind] = pygame.mixer.Sound(os.path.join(BASE_DIR, "assets", "music", name + ".ogg"))
+        except Exception:
+            _bgm_snd[kind] = None
+    return _bgm_snd[kind]
+
+
+def bgm_update():
+    """프레임마다: 곡마다 목표 크기까지 서서히 바꾸고 실제 채널 크기에 반영한다 (모든 화면이 frame_hook으로 부른다)."""
+    now = pygame.time.get_ticks()
+    dt = min(0.1, (now - _bgm_last[0]) / 1000.0) if _bgm_last[0] else 0.0
+    _bgm_last[0] = now
+    for kind, st in list(_bgm.items()):
+        if st["vol"] != st["target"]:
+            step = st["rate"] * dt
+            st["vol"] = min(st["target"], st["vol"] + step) if st["vol"] < st["target"] else max(st["target"], st["vol"] - step)
+        v = st["vol"]
+        try:
+            pygame.mixer.Channel(BGM_CHANNEL[kind]).set_volume(0.0 if muted else BGM_VOLUME * _bgm_gain * v * v * (3 - 2 * v))  # 부드럽게 변하는 곡선
+        except Exception:
+            pass
+        if st["vol"] <= 0 and st["target"] <= 0:  # 다 줄어들었으면 멈춘다
+            try:
+                pygame.mixer.Channel(BGM_CHANNEL[kind]).stop()
+            except Exception:
+                pass
+            del _bgm[kind]
 
 
 def bgm_apply():
-    try:
-        pygame.mixer.music.set_volume(0.0 if muted else BGM_VOLUME * _bgm_gain)
-    except Exception:
-        pass
+    bgm_update()
 
 
-def bgm_play(kind="game"):
-    """음악을 시작한다. kind: "menu"(메뉴 화면용) 또는 "game"(게임 중). 같은 종류가 이미 나오면 그대로 두고,
-    다른 종류가 나오고 있으면 바꾼다. 소리 장치나 파일이 없어도 게임은 그대로 간다."""
-    global _bgm_gain, _bgm_kind
+def bgm_play(kind="game", fade=0.0):
+    """kind("menu"/"game")의 음악을 튼다. 다른 종류가 나오고 있으면 fade초에 걸쳐 서서히 바꾸고(fade=0이면 바로 바꾼다),
+    같은 종류가 이미 나오면 그대로 둔다. 소리 장치나 파일이 없어도 게임은 그대로 간다."""
+    global _bgm_gain
+    snd = _bgm_sound(kind)
+    if snd is None:
+        return
+    st = _bgm.get(kind)
     try:
-        if pygame.mixer.music.get_busy() and _bgm_kind != kind:
-            pygame.mixer.music.stop()
-        if not pygame.mixer.music.get_busy():
-            name = ("menu_" + MENU_BGM_CHOICE) if kind == "menu" else ("bgm_" + BGM_CHOICE)
-            pygame.mixer.music.load(os.path.join(BASE_DIR, "assets", "music", name + ".ogg"))
-            pygame.mixer.music.play(-1)
-            _bgm_kind = kind
-        _bgm_gain = 1.0
-        bgm_apply()
+        ch = pygame.mixer.Channel(BGM_CHANNEL[kind])
+        if st is None or not ch.get_busy():
+            ch.play(snd, loops=-1)
+            st = _bgm[kind] = {"vol": 0.0 if fade > 0 else 1.0, "target": 1.0, "rate": 1.0}
     except Exception:
-        pass
+        return
+    st["target"] = 1.0
+    if fade > 0:
+        st["rate"] = 1.0 / fade
+    else:
+        st["vol"] = 1.0
+    for other, o in list(_bgm.items()):
+        if other == kind:
+            continue
+        if fade > 0:
+            o["target"] = 0.0
+            o["rate"] = 1.0 / fade
+        else:
+            try:
+                pygame.mixer.Channel(BGM_CHANNEL[other]).stop()
+            except Exception:
+                pass
+            del _bgm[other]
+    _bgm_gain = 1.0
+    bgm_update()
 
 
 def bgm_stop():
-    global _bgm_kind
-    _bgm_kind = None
-    try:
-        pygame.mixer.music.stop()
-    except Exception:
-        pass
+    """모든 음악을 바로 멈춘다."""
+    for kind in list(_bgm):
+        try:
+            pygame.mixer.Channel(BGM_CHANNEL[kind]).stop()
+        except Exception:
+            pass
+    _bgm.clear()
 
 
 def toggle_mute():
     global muted
     muted = not muted
-    bgm_apply()
+    bgm_update()
 
 
 def draw_mute_note():
@@ -244,12 +301,12 @@ def bgm_tick(game_over, paused):
             if _bgm_gain == 0:
                 bgm_stop()
             else:
-                bgm_apply()
+                bgm_update()
         return
     target = 0.35 if paused else 1.0
     if _bgm_gain != target:
         _bgm_gain = target
-        bgm_apply()
+        bgm_update()
 
 
 _last_boom = [0]
@@ -458,6 +515,12 @@ def _send_score(body):
         _js("window.astroid_post_state = ''; window.astroid_post(%s)" % json.dumps(json.dumps(body)))
     except Exception:
         pass
+
+
+def frame_hook():
+    """모든 화면 루프가 프레임 끝에 부른다: 음악 크기 조절 + 공용 순위표 갱신."""
+    bgm_update()
+    online_tick()
 
 
 def online_tick():
@@ -1106,7 +1169,7 @@ async def records_screen():
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
-        online_tick()
+        frame_hook()
         await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
 
 
@@ -1246,7 +1309,7 @@ async def ranking_screen(mode):
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
-        online_tick()
+        frame_hook()
         await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
 
 
@@ -1328,7 +1391,7 @@ async def name_screen():
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
-        online_tick()
+        frame_hook()
         await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
 
 
@@ -1451,7 +1514,7 @@ async def controls_screen(page=0):
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
-        online_tick()
+        frame_hook()
         await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
 
 
@@ -1530,7 +1593,7 @@ async def splash_screen():
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
-        online_tick()
+        frame_hook()
         await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
 
 
@@ -1611,6 +1674,7 @@ async def title_screen():
                     await records_screen()
             if start_now:
                 started = pygame.time.get_ticks()
+                bgm_play("game", TITLE_COUNTDOWN)  # 카운트다운 동안 메뉴 음악이 서서히 게임 음악으로 바뀐다
                 preview_player = Player()
                 preview_player.has_s = start_with_s
 
@@ -1705,7 +1769,7 @@ async def title_screen():
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
-        online_tick()
+        frame_hook()
         await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
 
 
@@ -2221,7 +2285,7 @@ async def main():
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
-        online_tick()
+        frame_hook()
         await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
 
 
@@ -2229,6 +2293,7 @@ async def front_screens(skip_name=False):
     """이름 화면 → 난이도 화면 → (Tutorial을 눌렀을 때만) 조작법 3쪽 → 전투기 고르기. 각 화면의 Back은 바로 앞 화면으로 돌아간다.
     난이도 화면에서 그냥 시작하면 조작법 없이 바로 전투기 고르기로 가고, 거기서 Back이면 난이도 화면으로 돌아간다."""
     bgm_play("menu")  # 메뉴 화면에서는 게임과 다른 음악
+    _bgm_sound("game")  # 게임 곡을 미리 읽어 둔다 (카운트다운에서 섞을 때 멈칫하지 않게)
     step = "splash" if skip_name else "name"
     via_tutorial = False  # 조작법 화면을 거쳐 왔는가
     while True:
