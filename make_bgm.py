@@ -2,7 +2,9 @@
 직접 작곡해서 합성한 곡이다 (녹음 파일이 아니다). 처음과 끝이 이어지게 만들어서 계속 반복해도 끊기지 않는다.
   bgm_a "Starfighter": 150 BPM, 라단조(A minor), 32마디(약 51초). 킥/스네어/하이햇 + 베이스 + 아르페지오 + 패드 + 리드 멜로디. 빠르고 박력 있는 슈팅 게임풍
   bgm_b "Deep Space":  100 BPM, 레단조(D minor), 16마디(약 38초). 큰 패드 + 낮은 베이스 + 천천히 울리는 아르페지오 + 느린 멜로디. 깊고 넓은 우주풍
-shooter.py 위쪽 BGM_CHOICE에서 a/b를 고른다."""
+  menu_a "Launch Bay": 92 BPM, 라장조(D major), 16마디(약 42초). 메뉴 화면용. 밝고 따뜻하게 출격을 기다리는 느낌 (종소리 같은 멜로디, 부드러운 킥)
+  menu_b "Star Map":   78 BPM, 미단조(E minor), 16마디(약 49초). 메뉴 화면용. 신비롭고 조용하게 별 지도를 보는 느낌 (아주 느린 울림)
+shooter.py 위쪽 BGM_CHOICE(게임 중)와 MENU_BGM_CHOICE(메뉴)에서 a/b를 고른다."""
 import os
 
 import numpy as np
@@ -136,12 +138,13 @@ def chord(root, kind):
 
 
 A_MINOR = [0, 2, 3, 5, 7, 8, 10]  # 자연 단음계(으뜸음으로부터의 반음 거리)
+D_MAJOR = [0, 2, 4, 5, 7, 9, 11]  # 장음계
 
 
-def scale_note(tonic, idx):
-    """tonic에서 시작하는 단음계의 idx번째 음(음수/7 이상이면 옥타브가 넘어간다)"""
+def scale_note(tonic, idx, scale=None):
+    """tonic에서 시작하는 음계(기본 단음계)의 idx번째 음(음수/7 이상이면 옥타브가 넘어간다)"""
     o, k = divmod(idx, 7)
-    return tonic + 12 * o + A_MINOR[k]
+    return tonic + 12 * o + (scale or A_MINOR)[k]
 
 
 def master(bus, drive=1.25, rms_db=-14.0, peak=0.9):
@@ -288,6 +291,97 @@ def make_b():
     return master(mix, 1.15)
 
 
+def bell(f, dur):
+    """종소리 같은 부드러운 음 (사인파 + 높은 배음이 빨리 사라짐)"""
+    t = tt(dur)
+    return (np.sin(2 * np.pi * f * t) + 0.35 * np.sin(2 * np.pi * 2 * f * t) * np.exp(-t * 6) + 0.18 * np.sin(2 * np.pi * 3.01 * f * t) * np.exp(-t * 9)) * np.exp(-t * 2.2)
+
+
+# ── 메뉴 곡 a: Launch Bay (92 BPM, 라장조, 16마디) ───────────────────
+def make_menu_a():
+    bpm, bars = 92, 16
+    beat = 60.0 / bpm
+    bar = beat * 4
+    N = int(bars * bar * SR)
+    rng = np.random.default_rng(31)
+    drums, bass, arp, pad, lead = (Bus(N) for _ in range(5))
+    prog = [(50, "maj"), (45, "maj"), (47, "min"), (43, "maj"), (50, "maj"), (45, "maj"), (43, "maj"), (45, "maj")]  # D A Bm G D A G A
+    ridx = {50: 0, 45: 4, 47: 5, 43: 3}  # 으뜸음 D에서 각 화음 뿌리의 음계 번호
+    motifs = [[4, 3, 2, 4], [5, 4, 2, 3], [4, 5, 6, 4], [6, 5, 4, 2]]
+    rhythm = [(0, 1.5), (1.5, 0.5), (2, 1.0), (3, 1.0)]
+    for b in range(bars):
+        root, kind = prog[b % 8]
+        t0 = b * bar
+        ch = chord(root + 12, kind)
+        for q in (0, 2):  # 부드러운 킥
+            drums.put(kick() * 0.8, t0 + q * beat, 0.0, 0.55)
+        for e8 in range(8):
+            drums.put(hat(rng), t0 + e8 * beat / 2, 0.3 if e8 % 2 else -0.3, 0.13)
+        x = harm(mf(root), bar * 0.98, "tri", 700) * env(bar * 0.98, 0.04, 1.6, 0.6, 0.2)
+        bass.put(x, t0, 0.0, 0.8)
+        for i, n in enumerate(ch):
+            for det in (-0.08, 0.08):
+                x = harm(mf(n) * 2 ** (det / 12), bar * 1.04, "saw", 2000) * env(bar * 1.04, 0.5, 1.4, 0.7, 0.3)
+                pad.put(x, t0, (i - 1) * 0.5, 0.15)
+        for e8 in range(8):  # 위로 오르는 종소리 아르페지오
+            note = ch[[0, 1, 2, 1, 2, 1, 2, 1][e8] % 3] + 12
+            arp.put(bell(mf(note), 0.9) * 0.5, t0 + e8 * beat / 2, -0.55 if e8 % 2 else 0.55, 0.3)
+        m = motifs[(b // 2) % 4] if b >= 4 else motifs[0]
+        for (st, du), off in zip(rhythm, m):
+            n = scale_note(50, ridx[root] + off, D_MAJOR) + 12
+            lead.put(bell(mf(n), du * beat * 1.6) * 0.8, t0 + st * beat, 0.1, 0.55)
+    echo(lead, beat * 0.75, 0.42, 5)
+    echo(arp, beat * 1.5, 0.4, 5)
+    reverb(pad, 0.4, 2.2, 6)
+    reverb(lead, 0.35, 1.8, 7)
+    reverb(arp, 0.3, 1.5, 8)
+    mix = Bus(N)
+    for b_, g in ((drums, 0.7), (bass, 0.9), (arp, 0.75), (pad, 0.85), (lead, 0.8)):
+        mix.L += b_.L * g
+        mix.R += b_.R * g
+    return master(mix, 1.1, -17.0)
+
+
+# ── 메뉴 곡 b: Star Map (78 BPM, 미단조, 16마디) ────────────────────
+def make_menu_b():
+    bpm, bars = 78, 16
+    beat = 60.0 / bpm
+    bar = beat * 4
+    N = int(bars * bar * SR)
+    rng = np.random.default_rng(41)
+    drums, bass, arp, pad, lead = (Bus(N) for _ in range(5))
+    prog = [(40, "min"), (48, "maj"), (43, "maj"), (50, "maj")]  # Em C G D (2마디씩)
+    for b in range(bars):
+        root, kind = prog[(b // 2) % 4]
+        t0 = b * bar
+        ch = chord(root + 12, kind)
+        drums.put(kick() * 0.7, t0, 0.0, 0.5)  # 심장 박동 같은 킥 (마디 첫 박만)
+        x = harm(mf(root), bar * 0.99, "tri", 600) * env(bar * 0.99, 0.08, 2.2, 0.7, 0.3)
+        bass.put(x, t0, 0.0, 0.85)
+        for i, n in enumerate(ch + [ch[0] + 12]):
+            for det in (-0.1, 0.0, 0.1):
+                x = harm(mf(n) * 2 ** (det / 12), bar * 1.06, "saw", 1800) * env(bar * 1.06, 0.9, 1.8, 0.8, 0.5)
+                pad.put(x, t0, (i - 1.5) * 0.5, 0.1)
+        for q in range(4):  # 느린 종소리 (한 박에 하나)
+            note = ch[[0, 2, 1, 2][q] % 3] + (24 if q % 2 else 12)
+            arp.put(bell(mf(note), 1.4) * 0.5, t0 + q * beat, -0.6 if q % 2 else 0.6, 0.3)
+        if b % 2 == 0:  # 2마디에 한 번 길게 울리는 멜로디
+            idx = {40: 0, 48: 5, 43: 2, 50: 6}[root]
+            for k, off in enumerate([4, 2] if b % 4 == 0 else [3, 5]):
+                n = scale_note(40, idx + off + 7)
+                lead.put(bell(mf(n), beat * 3.2) * 0.8, t0 + k * beat * 4, 0.0, 0.6)
+    echo(lead, beat * 1.0, 0.5, 6)
+    echo(arp, beat * 0.75, 0.45, 6)
+    reverb(pad, 0.5, 2.8, 9)
+    reverb(lead, 0.45, 2.4, 10)
+    reverb(arp, 0.4, 2.0, 11)
+    mix = Bus(N)
+    for b_, g in ((drums, 0.7), (bass, 0.95), (arp, 0.75), (pad, 0.95), (lead, 0.8)):
+        mix.L += b_.L * g
+        mix.R += b_.R * g
+    return master(mix, 1.1, -17.0)
+
+
 def save(name, x):
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, name + ".ogg")
@@ -304,5 +398,7 @@ def save(name, x):
 
 
 if __name__ == "__main__":
-    save("bgm_a", make_a())
-    save("bgm_b", make_b())
+    import sys
+    songs = {"bgm_a": make_a, "bgm_b": make_b, "menu_a": make_menu_a, "menu_b": make_menu_b}
+    for name in (sys.argv[1:] or songs):  # 예: python make_bgm.py menu_a  -> 그 곡만 다시 만든다
+        save(name, songs[name]())

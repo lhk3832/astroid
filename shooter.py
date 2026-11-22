@@ -180,10 +180,12 @@ _sfx_cache = {}
 
 
 # 배경음악: assets/music/bgm_{a 또는 b}.ogg (make_bgm.py가 작곡해서 만든 곡, 계속 반복한다). 게임 오버 때는 서서히 줄어들고 멈춘다
-BGM_CHOICE = "a"  # a = Starfighter (빠르고 박력 있는 곡), b = Deep Space (느리고 깊은 곡)
+BGM_CHOICE = "a"  # 게임 중 음악: a = Starfighter (빠르고 박력 있는 곡), b = Deep Space (느리고 깊은 곡)
+MENU_BGM_CHOICE = "a"  # 메뉴 화면 음악: a = Launch Bay (밝고 따뜻하게 출격을 기다리는 곡), b = Star Map (신비롭고 조용한 곡)
 BGM_VOLUME = 0.35  # 배경음악 크기(0~1). 효과음보다 작게
 muted = False  # M 키로 켜고 끄는 음소거 (배경음악과 효과음 모두)
 _bgm_gain = 1.0  # 일시정지 때 줄이거나 게임 오버 때 서서히 줄이는 비율(0~1)
+_bgm_kind = None  # 지금 나오는 음악 종류: "menu" 또는 "game"
 
 
 def bgm_apply():
@@ -193,13 +195,18 @@ def bgm_apply():
         pass
 
 
-def bgm_play():
-    """배경음악을 시작한다. 이미 나오는 중이면 그대로 둔다. 소리 장치나 파일이 없어도 게임은 그대로 간다."""
-    global _bgm_gain
+def bgm_play(kind="game"):
+    """음악을 시작한다. kind: "menu"(메뉴 화면용) 또는 "game"(게임 중). 같은 종류가 이미 나오면 그대로 두고,
+    다른 종류가 나오고 있으면 바꾼다. 소리 장치나 파일이 없어도 게임은 그대로 간다."""
+    global _bgm_gain, _bgm_kind
     try:
+        if pygame.mixer.music.get_busy() and _bgm_kind != kind:
+            pygame.mixer.music.stop()
         if not pygame.mixer.music.get_busy():
-            pygame.mixer.music.load(os.path.join(BASE_DIR, "assets", "music", "bgm_%s.ogg" % BGM_CHOICE))
+            name = ("menu_" + MENU_BGM_CHOICE) if kind == "menu" else ("bgm_" + BGM_CHOICE)
+            pygame.mixer.music.load(os.path.join(BASE_DIR, "assets", "music", name + ".ogg"))
             pygame.mixer.music.play(-1)
+            _bgm_kind = kind
         _bgm_gain = 1.0
         bgm_apply()
     except Exception:
@@ -207,6 +214,8 @@ def bgm_play():
 
 
 def bgm_stop():
+    global _bgm_kind
+    _bgm_kind = None
     try:
         pygame.mixer.music.stop()
     except Exception:
@@ -217,6 +226,13 @@ def toggle_mute():
     global muted
     muted = not muted
     bgm_apply()
+
+
+def draw_mute_note():
+    """음소거 중이라는 표시 (오른쪽 아래). 게임과 메뉴 화면이 같이 쓴다."""
+    if muted:
+        t = small_font.render("Sound OFF (M)", True, (200, 120, 120))
+        screen.blit(t, (W - t.get_width() - 10, H - 26))
 
 
 def bgm_tick(game_over, paused):
@@ -1258,6 +1274,8 @@ async def name_screen():
                     pygame.key.start_text_input()
                 else:
                     pygame.key.stop_text_input()
+            elif not active and e.type == pygame.KEYDOWN and e.key == pygame.K_m:  # 입력 중이 아닐 때 M: 소리 켜기/끄기
+                toggle_mute()
             elif active and e.type == pygame.TEXTINPUT:  # 글자 입력 (한글 등 IME 입력 포함)
                 text = (text + e.text)[:NAME_MAX]
             elif active and e.type == pygame.KEYDOWN:
@@ -1306,6 +1324,7 @@ async def name_screen():
         t = font.render("Play In Guest Mode", True, (240, 245, 255))
         screen.blit(t, t.get_rect(center=GUEST_BUTTON.center))
 
+        draw_mute_note()
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
@@ -1366,6 +1385,8 @@ async def controls_screen(page=0):
                     go = "next"
                 elif e.key in (pygame.K_ESCAPE, pygame.K_BACKSPACE, pygame.K_LEFT, pygame.K_a):
                     go = "prev"
+                elif e.key == pygame.K_m:  # M: 소리 켜기/끄기
+                    toggle_mute()
             if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                 mouse = (e.pos[0] / scale, e.pos[1] / scale)
                 if CONTROLS_SKIP.collidepoint(mouse):
@@ -1426,6 +1447,7 @@ async def controls_screen(page=0):
         t = font.render("Choose Fighter" if page == last else "Next", True, (240, 245, 255))
         screen.blit(t, t.get_rect(center=CONTROLS_NEXT.center))
 
+        draw_mute_note()
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
@@ -1453,6 +1475,8 @@ async def splash_screen():
                     game_mode = names[min(len(names) - 1, names.index(game_mode) + 1)]
                 elif e.key == pygame.K_ESCAPE:
                     return "back"
+                elif e.key == pygame.K_m:  # M: 소리 켜기/끄기
+                    toggle_mute()
                 else:
                     return
             if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
@@ -1502,6 +1526,7 @@ async def splash_screen():
             screen.blit(t, t.get_rect(center=PRESS_BAR.center))
         draw_best_box()
 
+        draw_mute_note()
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
@@ -1554,6 +1579,8 @@ async def title_screen():
                     unconfirm()
                 elif e.key in (pygame.K_ESCAPE, pygame.K_BACKSPACE):  # 이전 화면으로 돌아간다
                     return "back"
+                elif e.key == pygame.K_m:  # M: 소리 켜기/끄기
+                    toggle_mute()
                 elif e.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):  # 확인, 확인된 뒤에는 시작
                     if confirmed:
                         start_now = True
@@ -1674,6 +1701,7 @@ async def title_screen():
         if left is None:
             draw_best_box()  # 최고 점수 칸 (카운트다운 중에는 지운다)
 
+        draw_mute_note()
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
@@ -1683,7 +1711,7 @@ async def title_screen():
 
 async def main():
     global start_with_s
-    bgm_play()  # 게임이 시작될 때부터 음악 (게임 오버 뒤 다시 시작해도 멈췄던 음악을 다시 튼다)
+    bgm_play("game")  # 게임이 시작될 때 메뉴 음악이 게임 음악으로 바뀐다 (게임 오버 뒤 다시 시작해도 멈췄던 음악을 다시 튼다)
     player = Player()
     if start_with_s:  # 전투기 고르기의 숨겨진 기능: 시작하자마자 S 1개 (한 번만)
         player.has_s = True
@@ -2116,8 +2144,7 @@ async def main():
             pygame.draw.circle(screen, (255, 200, 120), p[0], max(1, p[2] // 8))
 
         draw_hud(screen, score, level, player)
-        if muted:  # 음소거 중이라는 표시
-            screen.blit(small_font.render("Sound OFF (M)", True, (200, 120, 120)), (W - 118, H - 24))
+        draw_mute_note()
         if bonus_flash:  # R 보너스 안내: 위에서 잠깐 보였다가 사라진다
             t = big.render(bonus_text, True, (255, 150, 170) if bonus_text.startswith("R") else (255, 230, 120))
             t.set_alpha(min(255, bonus_flash * 8))
@@ -2201,6 +2228,7 @@ async def main():
 async def front_screens(skip_name=False):
     """이름 화면 → 난이도 화면 → (Tutorial을 눌렀을 때만) 조작법 3쪽 → 전투기 고르기. 각 화면의 Back은 바로 앞 화면으로 돌아간다.
     난이도 화면에서 그냥 시작하면 조작법 없이 바로 전투기 고르기로 가고, 거기서 Back이면 난이도 화면으로 돌아간다."""
+    bgm_play("menu")  # 메뉴 화면에서는 게임과 다른 음악
     step = "splash" if skip_name else "name"
     via_tutorial = False  # 조작법 화면을 거쳐 왔는가
     while True:
