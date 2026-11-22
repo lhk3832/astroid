@@ -171,12 +171,71 @@ press_font = make_font(46, True)  # 첫 화면의 Press To Start 바 안 글씨
 
 # 효과음: assets/sfx/{이름}_{a 또는 b}.ogg. 소리마다 두 가지를 만들어 뒀고 아래에서 마음에 드는 쪽을 고른다 (make_sfx.py로 다시 만들 수 있다).
 SFX_CHOICE = {"shoot": "a", "bomb": "a", "hit": "a", "hurt": "a", "gameover": "a"}  # shoot 총알 쏠 때 / bomb 폭탄 터질 때 / hit 내가 적을 맞혔을 때 / hurt 내가 맞았을 때 / gameover 게임 오버
-SFX_VOLUME = {"shoot": 0.2, "bomb": 0.7, "hit": 0.5, "hurt": 0.5, "gameover": 1.0}  # 소리 크기(0~1). 자주 나는 소리는 작게
+SFX_VOLUME = {"shoot": 0.2, "bomb": 0.7, "hit": 0.5, "hurt": 0.5, "gameover": 1.5}  # 소리 크기(0~1). 자주 나는 소리는 작게
 _sfx_cache = {}
+
+
+# 배경음악: assets/music/bgm_{a 또는 b}.ogg (make_bgm.py가 작곡해서 만든 곡, 계속 반복한다). 게임 오버 때는 서서히 줄어들고 멈춘다
+BGM_CHOICE = "a"  # a = Starfighter (빠르고 박력 있는 곡), b = Deep Space (느리고 깊은 곡)
+BGM_VOLUME = 0.35  # 배경음악 크기(0~1). 효과음보다 작게
+muted = False  # M 키로 켜고 끄는 음소거 (배경음악과 효과음 모두)
+_bgm_gain = 1.0  # 일시정지 때 줄이거나 게임 오버 때 서서히 줄이는 비율(0~1)
+
+
+def bgm_apply():
+    try:
+        pygame.mixer.music.set_volume(0.0 if muted else BGM_VOLUME * _bgm_gain)
+    except Exception:
+        pass
+
+
+def bgm_play():
+    """배경음악을 시작한다. 이미 나오는 중이면 그대로 둔다. 소리 장치나 파일이 없어도 게임은 그대로 간다."""
+    global _bgm_gain
+    try:
+        if not pygame.mixer.music.get_busy():
+            pygame.mixer.music.load(os.path.join(BASE_DIR, "assets", "music", "bgm_%s.ogg" % BGM_CHOICE))
+            pygame.mixer.music.play(-1)
+        _bgm_gain = 1.0
+        bgm_apply()
+    except Exception:
+        pass
+
+
+def bgm_stop():
+    try:
+        pygame.mixer.music.stop()
+    except Exception:
+        pass
+
+
+def toggle_mute():
+    global muted
+    muted = not muted
+    bgm_apply()
+
+
+def bgm_tick(game_over, paused):
+    """게임 중 프레임마다: 일시정지면 작게, 게임 오버면 약 1.5초에 걸쳐 서서히 줄이고 멈춘다."""
+    global _bgm_gain
+    if game_over:
+        if _bgm_gain > 0:
+            _bgm_gain = max(0.0, _bgm_gain - 1 / 90)
+            if _bgm_gain == 0:
+                bgm_stop()
+            else:
+                bgm_apply()
+        return
+    target = 0.35 if paused else 1.0
+    if _bgm_gain != target:
+        _bgm_gain = target
+        bgm_apply()
 
 
 def play_sfx(name):
     """효과음 하나를 재생한다. 소리 장치가 없거나 파일이 없어도 게임은 그대로 간다."""
+    if muted:
+        return
     snd = _sfx_cache.get(name, 0)
     if snd == 0:
         try:
@@ -1252,6 +1311,7 @@ CONTROL_PAGES = [
         ("W A S D", "Move", "Or use the arrow keys"),
         ("Left Click", "Shoot", "Hold it to keep firing"),
         ("Space", "Pause", "Press again to continue"),
+        ("M", "Sound", "Turns the music and sounds on or off"),
     ]),
     ("Items", [
         ("P", "Missile +1", "Shoot more bullets (enemies fire more too)"),
@@ -1361,6 +1421,7 @@ async def splash_screen():
     최고 점수 칸을 누르면 모드별 최고 기록 화면이 열린다. 왼쪽 위의 Back 버튼(또는 Esc)을 누르면 "back"을 돌려줘서 이름 화면으로 돌아간다.
     오른쪽 위의 Tutorial 버튼을 누르면 "tutorial"을 돌려줘서 조작법 3쪽을 보여 준다 (그냥 시작하면 조작법을 건너뛴다)."""
     global game_mode
+    bgm_play()  # 이름 화면에서 클릭한 뒤라서 브라우저에서도 소리를 낼 수 있다
     stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
     names = list(MODES)
     while True:
@@ -1605,6 +1666,7 @@ async def title_screen():
 
 async def main():
     global start_with_s
+    bgm_play()  # 게임 오버 뒤 다시 시작하면 멈췄던 음악을 다시 튼다
     player = Player()
     if start_with_s:  # 전투기 고르기의 숨겨진 기능: 시작하자마자 S 1개 (한 번만)
         player.has_s = True
@@ -1648,6 +1710,8 @@ async def main():
                 save_run()  # 플레이 도중 창을 닫아도 점수는 남긴다
                 pygame.quit()
                 sys.exit()
+            if e.type == pygame.KEYDOWN and e.key == pygame.K_m:  # M: 소리 켜기/끄기
+                toggle_mute()
             if e.type == pygame.MOUSEBUTTONDOWN and e.button == 3:
                 blast = True
             if e.type == pygame.KEYDOWN and game_over and e.key == pygame.K_r:
@@ -1700,6 +1764,7 @@ async def main():
         if do_buy and confirm_idx is not None:
             buy_idx = confirm_idx  # 아래 구매 처리가 이 번호의 물건을 산다
 
+        bgm_tick(game_over, paused)
         if paused or shop or game_over:
             s_charging = False  # 멈추거나 끝나면 S 충전은 취소
         if was_shop and not shop:  # 다음 라운드는 처음처럼 위에서부터 적이 나타난다
@@ -2030,6 +2095,8 @@ async def main():
             pygame.draw.circle(screen, (255, 200, 120), p[0], max(1, p[2] // 8))
 
         draw_hud(screen, score, level, player)
+        if muted:  # 음소거 중이라는 표시
+            screen.blit(small_font.render("Sound OFF (M)", True, (200, 120, 120)), (W - 118, H - 24))
         if bonus_flash:  # R 보너스 안내: 위에서 잠깐 보였다가 사라진다
             t = big.render(bonus_text, True, (255, 150, 170) if bonus_text.startswith("R") else (255, 230, 120))
             t.set_alpha(min(255, bonus_flash * 8))

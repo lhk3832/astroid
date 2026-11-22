@@ -1,9 +1,10 @@
 효과음(shoot_*, bomb_*, hit_*, hurt_*, gameover_*)은 아래 두 CC0(Creative Commons Zero) 묶음의 소리를 잘라서 겹쳐 만든 것입니다.
   1) Kenney의 "Sci-Fi Sounds"(1.0)  - Created/distributed by Kenney (www.kenney.nl)
      출처: https://opengameart.org/content/sci-fi-sounds
-     원본: thrusterFire_000/004, explosionCrunch_000/001/002/003/004, impactMetal_000/003, lowFrequency_explosion_000/001
-  2) rubberduck의 "25 CC0 bang / firework SFX" (직접 녹음한 폭음)
+     원본: explosionCrunch_000/002/003/004, impactMetal_000/003, lowFrequency_explosion_000/001
+  2) rubberduck의 "25 CC0 bang / firework SFX" (직접 녹음한 폭음과 총소리)
      출처: https://opengameart.org/content/25-cc0-bang-firework-sfx
-     원본: cannon_01/02/03, bang_10, fw_04
+     원본: shot_01/02/03, cannon_01/02/03, bang_03/05/06/08/09/10, fw_02/04/06
   License: CC0 http://creativecommons.org/publicdomain/zero/1.0/ (자유롭게 사용 가능, 출처 표기는 의무가 아니지만 밝혀 둠)
-  (import_sfx.py가 자르고 페이드를 넣고 겹침)
+  (import_sfx.py가 자르고 페이드를 넣고 스테레오로 겹침)
+배경음악(assets/music/bgm_*.ogg)은 외부 파일이 아니라 이 프로젝트의 make_bgm.py가 직접 작곡해서 합성한 곡입니다.
