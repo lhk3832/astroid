@@ -104,7 +104,6 @@ CONFIRM_BUY = pygame.Rect(W // 2 + 30, 525, 180, 50)    # 구매 확인 화면�
 STATS_TITLE = pygame.Rect(W // 2 - 190, 45, 380, 70)       # 능력치 소개 화면의 "Fighter N" 이름. 숨겨진 기능의 클릭 자리
 HOVER_SCALE = 0.2  # 타이틀에서 전투기에 마우스를 올렸을 때 더 커지는 비율(0.2 = 1.2배)
 SHOP_TITLE = "Star Market" # 보너스 라운드 상점 화면의 제목
-SECRET_CLICKS = 7           # 타이틀의 최고 점수 칸을 이만큼 클릭하면 S를 들고 시작
 MODE_BUTTONS = [pygame.Rect(W // 2 - 215 + i * 150, 392, 130, 42) for i in range(3)]  # 첫 화면의 Easy / Normal / Hard 버튼 (가로 430px)
 PRESS_BAR = pygame.Rect(W // 2 - 215, 448, 430, 60)  # 첫 화면의 "Press To Start" 바: 모드 버튼 줄과 같은 길이
 RECORDS_BACK = pygame.Rect(W // 2 - 90, 505, 180, 50)  # 기록 화면의 Back 버튼
@@ -112,7 +111,6 @@ NAME_BOX = pygame.Rect(W // 2 - 215, 418, 430, 48)      # 이름 화면의 이�
 GUEST_BUTTON = pygame.Rect(W // 2 - 215, 505, 430, 52)  # 이름 화면의 "Play In Guest Mode" 버튼
 NAME_MAX = 12  # 이름 최대 글자 수
 SPLASH_BACK = pygame.Rect(12, 38, 92, 34)  # 난이도 화면 왼쪽 위의 Back 버튼 (이름 화면으로)
-BEST_CLICK_DELAY = 350  # 최고 점수 칸을 누르고 이만큼(ms) 더 안 누르면 기록 화면이 열린다 (빨리 SECRET_CLICKS번 누르는 숨겨진 기능 때문)
 MODE_COLORS = {"Easy": (90, 210, 120), "Normal": (110, 170, 255), "Hard": (255, 100, 100)}
 BEST_BOX = pygame.Rect(0, 0, 430, 46)  # 모드 버튼 줄과 같은 길이
 BEST_BOX.center = (W // 2, H - 55)  # 타이틀의 최고 점수 칸
@@ -167,9 +165,7 @@ TITLE_SPRITES = [load_sprite(f"player_{i}.png", TITLE_SPRITE_SIZE) for i in (1, 
 SPLASH_SPRITE = load_sprite("player_1.png", SPLASH_SPRITE_SIZE)  # 첫 화면의 큰 일반 비행기(1번)
 EXPLOSION_SPRITE = load_sprite("explosion.png", 208)  # 적 전투기가 폭발할 때의 그림(원본 크기, 그릴 때 크기를 바꾼다)
 selected_ship = 0  # 타이틀에서 고른 비행기 번호(0~2)
-start_with_s = False  # 타이틀의 숨겨진 기능으로 켜지면 다음 게임을 S 1개와 함께 시작
-secret_clicks = 0  # 첫 화면/고르기 화면에서 최고 점수 칸을 클릭한 횟수 (숨겨진 기능 S)
-start_with_change = False  # 능력치 화면의 숨겨진 기능으로 켜지면 다음 게임을 Change Ticket 1개와 함께 시작
+start_with_s = False  # 능력치 화면의 숨겨진 기능으로 켜지면 다음 게임을 S(무지개 폭탄) 1개와 함께 시작
 
 
 def fade_color(color, alpha):
@@ -188,48 +184,70 @@ def num(v):
     return int(f) if f == int(f) else f
 
 
+RANK_SIZE = 10  # 모드마다 기록하는 순위 수 (1~10위)
+
+
+def to_record(v):
+    """저장 파일의 한 항목(기록 dict, 또는 예전의 점수 숫자)을 기록 dict로 바꾼다."""
+    rec = empty_record()
+    if isinstance(v, dict):
+        for key in rec:
+            if key in v:
+                rec[key] = v[key]
+        rec["score"] = num(rec["score"])
+    else:
+        rec["score"] = num(v)
+    return rec
+
+
 def load_best():
-    """모드별 최고 기록 {"Easy": {...}, "Normal": {...}, "Hard": {...}}. 기록 하나는 점수/날짜/전투기/레벨/플레이 시간(초).
-    예전 파일(점수 숫자 하나, 또는 모드별 점수 숫자)도 읽는다."""
-    best = {name: empty_record() for name in MODES}
+    """모드별 순위표 {"Easy": [1위, 2위, ...], "Normal": [...], "Hard": [...]} (점수 높은 순, 최대 RANK_SIZE개).
+    기록 하나는 점수/날짜/전투기/레벨/플레이 시간(초)/플레이어 이름. 예전 파일(모드별 기록 하나, 점수 숫자)도 읽는다."""
+    ranks = {name: [] for name in MODES}
     try:
         with open(BEST_FILE, encoding="utf-8") as f:
             data = json.loads(f.read().strip())
-        if isinstance(data, dict):
-            for name in best:
-                v = data.get(name)
-                if isinstance(v, dict):
-                    for key in best[name]:
-                        if key in v:
-                            best[name][key] = v[key]
-                    best[name]["score"] = num(best[name]["score"])
-                elif v is not None:
-                    best[name]["score"] = num(v)
-        else:
-            best["Normal"]["score"] = num(data)
+        if not isinstance(data, dict):
+            data = {"Normal": data}  # 예전 파일: 점수 숫자 하나는 Normal 점수
+        for name in ranks:
+            v = data.get(name)
+            items = v if isinstance(v, list) else ([] if v is None else [v])
+            recs = [to_record(x) for x in items]
+            recs = [r for r in recs if r["score"] > 0]
+            recs.sort(key=lambda r: -r["score"])
+            ranks[name] = recs[:RANK_SIZE]
     except (OSError, ValueError, TypeError):
         pass
-    return best
+    return ranks
 
 
-best_scores = load_best()
+rankings = load_best()
+
+
+def top_record(mode):
+    """그 모드의 1위 기록 (기록이 없으면 점수 0인 빈 기록)."""
+    return rankings[mode][0] if rankings[mode] else empty_record()
 
 
 def save_best(score, level=0, seconds=0):
-    """현재 모드의 최고 기록을 갱신하고 파일에 저장한다 (점수, 오늘 날짜, 고른 전투기, 레벨, 플레이 시간).
-    점수가 xxxx.5처럼 .5로 끝나면 기록할 때는 0.5를 뺀 점수로 적는다 (화면에 보이는 점수는 그대로)."""
-    rec = best_scores[game_mode]
+    """게임 한 판의 결과를 현재 모드의 순위표(1~10위)에 넣고 파일에 저장한다 (점수, 오늘 날짜, 고른 전투기, 레벨, 플레이 시간, 이름).
+    점수가 xxxx.5처럼 .5로 끝나면 기록할 때는 0.5를 뺀 점수로 적는다 (화면에 보이는 점수는 그대로).
+    10위 안에 들지 못하면 기록하지 않는다."""
     if score != int(score):
         score -= 0.5
     score = int(score)
-    if score > rec["score"]:
-        rec.update(score=score, date=datetime.date.today().isoformat(), ship=SHIP_NAMES[selected_ship], player=player_name,
-                   level=level, time=int(seconds))
-        try:
-            with open(BEST_FILE, "w", encoding="utf-8") as f:
-                json.dump(best_scores, f)
-        except OSError:
-            pass  # 저장하지 못해도 게임은 계속한다
+    ranks = rankings[game_mode]
+    if score <= 0 or (len(ranks) >= RANK_SIZE and score <= ranks[-1]["score"]):
+        return
+    ranks.append({"score": score, "date": datetime.date.today().isoformat(), "ship": SHIP_NAMES[selected_ship],
+                  "level": level, "time": int(seconds), "player": player_name})
+    ranks.sort(key=lambda r: -r["score"])  # 같은 점수는 먼저 낸 기록이 위
+    del ranks[RANK_SIZE:]
+    try:
+        with open(BEST_FILE, "w", encoding="utf-8") as f:
+            json.dump(rankings, f, ensure_ascii=False)
+    except OSError:
+        pass  # 저장하지 못해도 게임은 계속한다
 
 
 def bullet_hits(en, b):
@@ -556,7 +574,7 @@ def draw_shop_icon(kind, cx, cy):
             pygame.draw.circle(screen, (60, 130, 200), (cx, cy), 18, 2)
     elif kind == "speed":
         for dx in (-14, 8):
-            pygame.draw.lines(screen, (90, 210, 255), False, [(cx + dx, cy - 20), (cx + dx + 18, cy), (cx + dx, cy + 20)], 6)
+            pygame.draw.lines(screen, (90, 210, 255), False, [(cx + dx, cy - 27), (cx + dx + 18, cy), (cx + dx, cy + 20)], 6)
     elif kind == "rapid":
         for i, dx in enumerate((-24, 0, 24)):
             pygame.draw.ellipse(screen, (255, 240, 120), (cx + dx - 6, cy - 24 + (i % 2) * 14, 12, 34))
@@ -693,8 +711,8 @@ def draw_stats_screen(ship, now):
     t = big.render(f"Fighter {ship + 1}", True, (120, 210, 255))
     title_rect = t.get_rect(center=STATS_TITLE.center)
     screen.blit(t, title_rect)
-    if start_with_change:  # 숨겨진 기능이 켜졌다는 표시: 이름 오른쪽에 Change 아이콘
-        draw_change_icon((title_rect.right + 30, title_rect.centery), 14)
+    if start_with_s:  # 숨겨진 기능이 켜졌다는 표시: 이름 오른쪽에 무지개 폭탄 아이콘
+        draw_bomb_icon((title_rect.right + 34, title_rect.centery + 8), rainbow=True, r=13)
 
     sprite = TITLE_SPRITES[ship]
     if sprite:
@@ -712,13 +730,11 @@ def draw_stats_screen(ship, now):
 
 
 def draw_best_box():
-    """최고 점수 칸(My best Score). 첫 화면과 전투기 고르기 화면에 똑같이 나온다. 숨겨진 기능(S)이 켜져 있으면 오른쪽에 무지개 폭탄."""
+    """최고 점수 칸(My best Score). 첫 화면과 전투기 고르기 화면에 똑같이 나오고, 누르면 기록 화면이 열린다."""
     pygame.draw.rect(screen, (24, 28, 56), BEST_BOX, border_radius=8)
     pygame.draw.rect(screen, (255, 220, 70), BEST_BOX, 2, border_radius=8)
-    t = font.render(f"My best Score  {fmt_score(best_scores[game_mode]['score'])}", True, (255, 240, 170))
+    t = font.render(f"My best Score  {fmt_score(top_record(game_mode)['score'])}", True, (255, 240, 170))
     screen.blit(t, t.get_rect(center=BEST_BOX.center))
-    if start_with_s:
-        draw_bomb_icon((BEST_BOX.right - 26, BEST_BOX.centery + 4), rainbow=True, r=9)
 
 
 def fit_text(fnt, text, max_w):
@@ -737,24 +753,24 @@ def format_time(seconds):
 def records_screen():
     """모드별 최고 기록 화면: 점수, 전투기, 레벨, 플레이 시간, 날짜. 아무 키나 Back 버튼으로 닫는다."""
     stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
-    leaving = None  # Back을 누른(나가기 시작한) 시각(ms)
     cols = {"mode": 40, "score": 178, "player": 292, "ship": 402, "level": 477, "time": 542, "date": 668}  # 각 칸의 x (mode만 왼쪽 맞춤)
+    cards = [pygame.Rect(30, 215 + i * 90 - 36, 740, 72) for i in range(len(MODES))]  # 모드별 1위 줄 (누르면 그 모드의 1~10위)
     while True:
         for e in pygame.event.get():
             if e.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-            if leaving is not None:
-                continue  # 나가는 중에는 입력을 받지 않는다
             if e.type == pygame.KEYDOWN:
-                leaving = pygame.time.get_ticks()
+                return
             if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
-                if RECORDS_BACK.collidepoint(e.pos[0] / scale, e.pos[1] / scale):
-                    leaving = pygame.time.get_ticks()
+                mouse = (e.pos[0] / scale, e.pos[1] / scale)
+                if RECORDS_BACK.collidepoint(mouse):
+                    return
+                for name, card in zip(MODES, cards):
+                    if card.collidepoint(mouse):  # 모드 줄을 누르면 그 모드의 1~10위
+                        ranking_screen(name)
 
         now = pygame.time.get_ticks()
-        if leaving is not None and now - leaving >= BEST_CLICK_DELAY:
-            return  # 들어올 때 기다린 시간(BEST_CLICK_DELAY)만큼 지난 뒤에 나간다
         screen.fill((10, 10, 30))
         for x, y, s in stars:
             pygame.draw.circle(screen, (90, 90, 130), (x, (y + now * s // 40) % H), s)
@@ -766,10 +782,11 @@ def records_screen():
             screen.blit(t, (cols[key], 140) if key == "mode" else t.get_rect(center=(cols[key], 150)))
         for i, name in enumerate(MODES):
             y = 215 + i * 90
-            rec = best_scores[name]
-            card = pygame.Rect(30, y - 36, 740, 72)
+            rec = top_record(name)
+            card = cards[i]
             color = MODE_COLORS[name]
-            pygame.draw.rect(screen, tuple(int(c * 0.18) for c in color), card, border_radius=10)
+            hovered = card.collidepoint(pygame.mouse.get_pos()[0] / scale, pygame.mouse.get_pos()[1] / scale)
+            pygame.draw.rect(screen, tuple(int(c * (0.28 if hovered else 0.18)) for c in color), card, border_radius=10)
             pygame.draw.rect(screen, color if name == game_mode else tuple(int(c * 0.55) for c in color), card, 3 if name == game_mode else 2, border_radius=10)
             screen.blit(font.render(name, True, color), (cols["mode"], y - 14))
             has = rec["score"] > 0  # 기록이 없으면 칸을 "-"로 둔다
@@ -787,16 +804,149 @@ def records_screen():
                 t = fnt.render(text, True, (255, 240, 170) if key == "score" else (225, 228, 240))
                 screen.blit(t, t.get_rect(center=(cols[key], y)))
 
+        t = small_font.render("Click a mode to see its Top 10", True, (150, 155, 185))
+        screen.blit(t, t.get_rect(center=(W / 2, 478)))
         hover = RECORDS_BACK.collidepoint(pygame.mouse.get_pos()[0] / scale, pygame.mouse.get_pos()[1] / scale)
         pygame.draw.rect(screen, (70, 90, 150) if hover else (40, 50, 90), RECORDS_BACK, border_radius=10)
         pygame.draw.rect(screen, (150, 190, 255), RECORDS_BACK, 2, border_radius=10)
         t = font.render("Back", True, (240, 245, 255))
         screen.blit(t, t.get_rect(center=RECORDS_BACK.center))
-        if leaving is not None:  # 나가는 동안 서서히 어두워진다
-            fade_layer = pygame.Surface((W, H))
-            fade_layer.fill((10, 10, 30))
-            fade_layer.set_alpha(int(255 * min(1.0, (now - leaving) / BEST_CLICK_DELAY)))
-            screen.blit(fade_layer, (0, 0))
+
+        window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
+        pygame.display.flip()
+        clock.tick(FPS)
+
+
+MEDAL_SIZE = 42
+
+
+def _medal_shine(surf, img, center, now, strong):
+    """메달 위로 비스듬한 빛줄기가 지나가고(메달 모양 안에서만) 모서리에서 별빛이 반짝인다. strong이면 금메달용으로 더 세고 자주."""
+    period, sweep = (1500, 0.45) if strong else (2600, 0.35)
+    t = (now % period) / period
+    w, h = img.get_size()
+    key = ("medalmask", id(img))
+    if key not in _icon_cache:
+        _icon_cache[key] = pygame.mask.from_surface(img, 120).to_surface(setcolor=(255, 255, 255, 255), unsetcolor=(0, 0, 0, 0))
+    if t < sweep:  # 빛줄기: 왼쪽 아래에서 오른쪽 위로 지나간다
+        k = t / sweep
+        x = -w * 0.5 + k * w * 2
+        band = pygame.Surface((w, h), pygame.SRCALPHA)
+        a = 150 if strong else 80
+        pygame.draw.polygon(band, (255, 255, 255, a), [(x, h), (x + w * 0.28, h), (x + w * 0.28 + h * 0.6, 0), (x + h * 0.6, 0)])
+        band.blit(_icon_cache[key], (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+        surf.blit(band, band.get_rect(center=center))
+    # 별빛: 빛줄기가 지나간 직후에 오른쪽 위에서 커졌다 작아진다
+    u = (t - sweep * 0.8) / 0.25
+    if 0 <= u <= 1:
+        size = (7 if strong else 5) * math.sin(u * math.pi)
+        sx, sy = center[0] + w * 0.30, center[1] - h * 0.30
+        col = (255, 252, 220)
+        pygame.draw.line(surf, col, (sx - size, sy), (sx + size, sy), 2 if strong else 1)
+        pygame.draw.line(surf, col, (sx, sy - size), (sx, sy + size), 2 if strong else 1)
+
+
+def draw_medal(surf, center, i, now):
+    """1~3위 메달 (i = 0 금, 1 은, 2 동). 그림(assets/medal_*.png)을 쓰고, 금메달이 가장 크다. 그림이 없으면 도형으로 그린다."""
+    cx, cy = center
+    key = ("medal", i)
+    if key not in _icon_cache:  # assets/medal_{gold,silver,bronze}.png (셋 다 같은 크기)
+        _icon_cache[key] = load_sprite(f"medal_{('gold', 'silver', 'bronze')[i]}.png", MEDAL_SIZE)
+    img = _icon_cache[key]
+    if img:
+        surf.blit(img, img.get_rect(center=(cx, cy)))
+        if i == 0:  # 금메달만 번쩍이는 효과 (은·동메달은 그대로)
+            _medal_shine(surf, img, (cx, cy), now, strong=True)
+        return
+    rim, face, shine = [((170, 120, 20), (255, 210, 60), (255, 245, 170)),
+                        ((120, 125, 140), (205, 210, 225), (250, 252, 255)),
+                        ((120, 70, 30), (205, 130, 70), (240, 190, 140))][i]
+    if i == 0:
+        pulse = 0.5 + 0.5 * math.sin(now / 250)
+        glow = pygame.Surface((80, 80), pygame.SRCALPHA)
+        for r, a in ((38, 25), (30, 40), (24, 55)):
+            pygame.draw.circle(glow, (255, 220, 90, int(a + 25 * pulse)), (40, 40), r)
+        surf.blit(glow, glow.get_rect(center=(cx, cy)))
+        r = 16
+    else:
+        r = 12
+    pygame.draw.circle(surf, rim, (cx, cy), r)
+    pygame.draw.circle(surf, face, (cx, cy), r - 3)
+    pygame.draw.circle(surf, shine, (cx - r // 4, cy - r // 4), max(2, r // 4))
+    if i == 0:  # 별 무늬 테두리와 반짝임
+        for k in range(8):
+            a = k * math.pi / 4 + now / 1500
+            pygame.draw.circle(surf, (255, 250, 200), (int(cx + math.cos(a) * (r - 1.5)), int(cy + math.sin(a) * (r - 1.5))), 1)
+        for k in range(4):
+            a = k * math.pi / 2 + now / 600
+            sx, sy = cx + math.cos(a) * (r + 7), cy + math.sin(a) * (r + 7)
+            pygame.draw.line(surf, (255, 250, 210), (sx - 3, sy), (sx + 3, sy), 1)
+            pygame.draw.line(surf, (255, 250, 210), (sx, sy - 3), (sx, sy + 3), 1)
+    t = (font if i == 0 else small_font).render(str(i + 1), True, tuple(c // 2 for c in rim))
+    surf.blit(t, t.get_rect(center=(cx, cy + 1)))
+
+
+def ranking_screen(mode):
+    """한 모드의 1~10위 화면: 순위, 이름, 점수, 전투기, 레벨, 플레이 시간, 날짜. 아무 키나 Back 버튼으로 닫는다."""
+    stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
+    color = MODE_COLORS[mode]
+    medal = [(255, 215, 80), (210, 215, 230), (215, 150, 90)]  # 1~3위 색 (금, 은, 동)
+    cols = {"rank": 50, "player": 100, "score": 300, "ship": 410, "level": 495, "time": 565, "date": 685}  # 각 칸의 x (player만 왼쪽 맞춤)
+    while True:
+        for e in pygame.event.get():
+            if e.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if e.type == pygame.KEYDOWN:
+                return
+            if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                if RECORDS_BACK.collidepoint(e.pos[0] / scale, e.pos[1] / scale):
+                    return
+
+        now = pygame.time.get_ticks()
+        screen.fill((10, 10, 30))
+        for x, y, s in stars:
+            pygame.draw.circle(screen, (90, 90, 130), (x, (y + now * s // 40) % H), s)
+        t = big.render(f"{mode} Top {RANK_SIZE}", True, color)
+        screen.blit(t, t.get_rect(center=(W / 2, 48)))
+        for key, label in (("player", "Player"), ("score", "Score"), ("ship", "Fighter"), ("level", "Level"), ("time", "Time"), ("date", "Date")):
+            t = small_font.render(label, True, (150, 155, 185))
+            screen.blit(t, (cols[key], 100) if key == "player" else t.get_rect(center=(cols[key], 110)))
+        rows = rankings[mode]
+        for i in range(RANK_SIZE):
+            y = 142 + i * 33
+            band = pygame.Rect(30, y - 15, 740, 30)
+            pygame.draw.rect(screen, tuple(int(c * (0.36 if i % 2 == 0 else 0.22)) for c in color), band, border_radius=6)
+            rank_color = medal[i] if i < 3 else (200, 205, 225)
+            if i < 3:
+                draw_medal(screen, (cols["rank"] + 6, y), i, now)
+            else:  # 4위부터는 숫자를 메달과 같은 세로줄(가운데)에 맞춘다
+                t = font.render(str(i + 1), True, rank_color)
+                screen.blit(t, t.get_rect(center=(cols["rank"] + 6, y)))
+            if i < len(rows):
+                rec = rows[i]
+                cells = {
+                    "player": (fit_text(font, rec["player"] or "-", 170), "left", rank_color if i < 3 else (225, 228, 240)),
+                    "score": (fmt_score(rec["score"]), "center", (255, 240, 170)),
+                    "ship": (rec["ship"] or "-", "center", (225, 228, 240)),
+                    "level": (f"Lv {rec['level']}" if rec["level"] else "-", "center", (225, 228, 240)),
+                    "time": (format_time(rec["time"]) if rec["time"] else "-", "center", (225, 228, 240)),
+                    "date": (rec["date"] or "-", "center", (225, 228, 240)),
+                }
+                for key, (text, align, col) in cells.items():
+                    t = font.render(text, True, col)
+                    pos = t.get_rect(midleft=(cols[key], y)) if align == "left" else t.get_rect(center=(cols[key], y))
+                    screen.blit(t, pos)
+            else:  # 아직 기록이 없는 순위
+                t = font.render("-", True, tuple(int(c * 0.55) for c in color))
+                screen.blit(t, t.get_rect(midleft=(cols["player"], y)))
+
+        pygame.draw.rect(screen, tuple(int(c * 0.7) for c in color), pygame.Rect(30, 127, 740, 33 * RANK_SIZE + 3), 2, border_radius=8)  # 순위표 테두리
+        hover = RECORDS_BACK.collidepoint(pygame.mouse.get_pos()[0] / scale, pygame.mouse.get_pos()[1] / scale)
+        pygame.draw.rect(screen, tuple(int(c * (0.45 if hover else 0.3)) for c in color), RECORDS_BACK, border_radius=10)
+        pygame.draw.rect(screen, color, RECORDS_BACK, 2, border_radius=10)
+        t = font.render("Back", True, (240, 245, 255))
+        screen.blit(t, t.get_rect(center=RECORDS_BACK.center))
 
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
@@ -878,13 +1028,119 @@ def name_screen():
         clock.tick(FPS)
 
 
+def draw_nav_back():
+    """왼쪽 위의 "← Back" 버튼 (난이도 화면, 조작법 화면, 전투기 고르기 화면이 같이 쓴다)."""
+    mx, my = pygame.mouse.get_pos()
+    hover = SPLASH_BACK.collidepoint(mx / scale, my / scale)
+    pygame.draw.rect(screen, (60, 75, 125) if hover else (35, 42, 80), SPLASH_BACK, border_radius=8)
+    pygame.draw.rect(screen, (150, 190, 255), SPLASH_BACK, 2, border_radius=8)
+    t = small_font.render("← Back", True, (230, 235, 250))
+    screen.blit(t, t.get_rect(center=SPLASH_BACK.center))
+
+
+# 조작법 화면의 쪽: (제목, [(왼쪽 표시, 한 줄 제목, 설명), ...]). 왼쪽 표시가 "P" 같은 아이템 글자면 색 동그라미, 아니면 키 이름 상자
+CONTROL_PAGES = [
+    ("Move", [
+        ("W A S D", "Move", "Or use the arrow keys"),
+        ("Left Click", "Shoot", "Hold it to keep firing"),
+        ("Space", "Pause", "Press again to continue"),
+    ]),
+    ("Items", [
+        ("P", "Missile +1", "Shoot more bullets (enemies fire more too)"),
+        ("R", "Heal", "Restores 1 heart"),
+        ("B", "Bomb", "Right Click: blasts nearby enemies and bullets"),
+        ("S", "Rainbow Bomb", "Hold Right Click 0.5s: a huge blast"),
+        ("C", "Coin", "Spend coins in the Bonus Round shop"),
+    ]),
+    ("Good To Know", [
+        ("Shop", "Bonus Round", f"Every {BONUS_INTERVAL}s a shop opens to buy upgrades"),
+        ("Red", "Red enemies", "The basic ones. They often drop R (heal)"),
+        ("Green", "Green enemies", "They throw bombs, so keep away from the blast"),
+        ("Yellow", "Yellow enemies", "Fast and tough, but they drop coins"),
+    ]),
+]
+CONTROLS_NEXT = pygame.Rect(W // 2 - 130, 505, 260, 50)
+CONTROL_START = [0]  # 조작법 화면을 처음 열 쪽 (전투기 고르기에서 Back으로 오면 마지막 쪽)
+
+
+def controls_screen(page=0):
+    """전투기를 고르기 전의 조작법 설명 (3쪽). Next / Enter로 다음 쪽, Back / Esc로 이전 쪽.
+    첫 쪽에서 Back이면 "back"(난이도 화면으로), 마지막 쪽에서 Next면 None(전투기 고르기로)을 돌려준다."""
+    stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
+    last = len(CONTROL_PAGES) - 1
+    while True:
+        go = None  # "next" / "prev"
+        for e in pygame.event.get():
+            if e.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if e.type == pygame.KEYDOWN:
+                if e.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE, pygame.K_RIGHT, pygame.K_d):
+                    go = "next"
+                elif e.key in (pygame.K_ESCAPE, pygame.K_BACKSPACE, pygame.K_LEFT, pygame.K_a):
+                    go = "prev"
+            if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                mouse = (e.pos[0] / scale, e.pos[1] / scale)
+                if CONTROLS_NEXT.collidepoint(mouse):
+                    go = "next"
+                elif SPLASH_BACK.collidepoint(mouse):
+                    go = "prev"
+        if go == "next":
+            if page == last:
+                return
+            page += 1
+        elif go == "prev":
+            if page == 0:
+                return "back"
+            page -= 1
+
+        now = pygame.time.get_ticks()
+        screen.fill((10, 10, 30))
+        for x, y, s in stars:
+            pygame.draw.circle(screen, (90, 90, 130), (x, (y + now * s // 40) % H), s)
+        draw_nav_back()
+        heading, rows = CONTROL_PAGES[page]
+        t = big.render(heading, True, (120, 210, 255))
+        screen.blit(t, t.get_rect(center=(W / 2, 75)))
+        for i, (badge, head, desc) in enumerate(rows):
+            cy = 160 + i * 70
+            panel = pygame.Rect(70, cy - 30, 660, 60)
+            pygame.draw.rect(screen, (24, 28, 56), panel, border_radius=10)
+            pygame.draw.rect(screen, (60, 70, 120), panel, 2, border_radius=10)
+            if len(badge) == 1 and badge in ITEM_COLORS:  # 아이템은 게임 속 모양(색 동그라미 + 글자)으로
+                fill, edge = ITEM_COLORS[badge]
+                pygame.draw.circle(screen, edge, (130, cy), 22)
+                pygame.draw.circle(screen, fill, (130, cy), 19)
+                t = font.render(badge, True, edge)
+                screen.blit(t, t.get_rect(center=(130, cy)))
+            else:  # 키 이름 상자
+                t = small_font.render(badge, True, (255, 230, 120))
+                box = pygame.Rect(0, 0, max(70, t.get_width() + 24), 34)
+                box.center = (130, cy)
+                pygame.draw.rect(screen, (40, 46, 90), box, border_radius=8)
+                pygame.draw.rect(screen, (255, 220, 70), box, 2, border_radius=8)
+                screen.blit(t, t.get_rect(center=box.center))
+            screen.blit(font.render(head, True, (235, 238, 250)), (215, cy - 24))
+            screen.blit(small_font.render(desc, True, (160, 165, 195)), (215, cy + 4))
+        for i in range(len(CONTROL_PAGES)):  # 쪽 표시 점
+            pygame.draw.circle(screen, (255, 220, 70) if i == page else (70, 75, 110), (int(W // 2 + (i - last / 2) * 24), 486), 6)
+        mx, my = pygame.mouse.get_pos()
+        hover = CONTROLS_NEXT.collidepoint(mx / scale, my / scale)
+        pygame.draw.rect(screen, (60, 75, 125) if hover else (35, 42, 80), CONTROLS_NEXT, border_radius=10)
+        pygame.draw.rect(screen, (150, 190, 255), CONTROLS_NEXT, 2, border_radius=10)
+        t = font.render("Choose Fighter" if page == last else "Next", True, (240, 245, 255))
+        screen.blit(t, t.get_rect(center=CONTROLS_NEXT.center))
+
+        window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
+        pygame.display.flip()
+        clock.tick(FPS)
+
+
 def splash_screen():
     """게임을 켜면 가장 먼저 나오는 화면: 제목, 큰 일반 비행기(1번), Easy/Normal/Hard 버튼, "Press To Start", 최고 점수.
     버튼(또는 ← →)으로 난이도를 고르고, 그 밖의 아무 키나 클릭을 하면 전투기 고르기 화면으로 간다.
     최고 점수 칸을 누르면 모드별 최고 기록 화면이 열린다. 왼쪽 위의 Back 버튼(또는 Esc)을 누르면 "back"을 돌려줘서 이름 화면으로 돌아간다."""
-    global secret_clicks, game_mode
-    secret_clicks = 0
-    best_pending = None  # 최고 점수 칸을 누른 시각(ms). 더 안 누르면 기록 화면을 연다
+    global game_mode
     stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
     names = list(MODES)
     while True:
@@ -908,17 +1164,12 @@ def splash_screen():
                     return "back"
                 if clicked:  # 버튼을 누르면 그 난이도를 고른다
                     game_mode = clicked[0]
-                elif BEST_BOX.collidepoint(mouse):  # 한 번 누르면 기록 화면, 빠르게 SECRET_CLICKS번 누르면 숨겨진 기능(S)
-                    best_pending = None if count_secret_click() else pygame.time.get_ticks()
+                elif BEST_BOX.collidepoint(mouse):  # 최고 점수 칸을 누르면 기록 화면
+                    records_screen()
                 else:
                     return
 
         now = pygame.time.get_ticks()
-        if best_pending is not None and now - best_pending >= BEST_CLICK_DELAY:
-            best_pending = None
-            secret_clicks = 0
-            records_screen()
-            continue
         screen.fill((10, 10, 30))
         for x, y, s in stars:
             pygame.draw.circle(screen, (90, 90, 130), (x, (y + now * s // 40) % H), s)
@@ -926,11 +1177,7 @@ def splash_screen():
         t = title_font.render(GAME_TITLE, True, (120, 210, 255))
         screen.blit(t, t.get_rect(center=(W / 2, 100)))
         screen.blit(small_font.render(f"Player: {player_name}", True, (150, 155, 185)), (12, 10))
-        back_hover = SPLASH_BACK.collidepoint(pygame.mouse.get_pos()[0] / scale, pygame.mouse.get_pos()[1] / scale)
-        pygame.draw.rect(screen, (60, 75, 125) if back_hover else (35, 42, 80), SPLASH_BACK, border_radius=8)
-        pygame.draw.rect(screen, (150, 190, 255), SPLASH_BACK, 2, border_radius=8)
-        t = small_font.render("← Back", True, (230, 235, 250))
-        screen.blit(t, t.get_rect(center=SPLASH_BACK.center))
+        draw_nav_back()
         if SPLASH_SPRITE:
             screen.blit(SPLASH_SPRITE, SPLASH_SPRITE.get_rect(center=(W / 2, 262 + math.sin(now / 300) * 6)))
         mouse = pygame.mouse.get_pos()
@@ -955,20 +1202,9 @@ def splash_screen():
         clock.tick(FPS)
 
 
-def count_secret_click():
-    """최고 점수 칸 클릭을 센다. SECRET_CLICKS번째에 S를 들고 시작하는 기능이 켜지고 True를 돌려준다 (Change Ticket이 켜져 있으면 못 켠다)."""
-    global secret_clicks, start_with_s
-    secret_clicks += 1
-    if secret_clicks == SECRET_CLICKS and not start_with_change:
-        start_with_s = True
-        return True  # 방금 켜졌다
-    return False
-
-
 def title_screen():
-    global selected_ship, start_with_s, start_with_change, secret_clicks
+    global selected_ship, start_with_s
     name_clicks = 0    # 능력치 화면에서 전투기 이름(Fighter N)을 클릭한 횟수
-    best_pending = None  # 최고 점수 칸을 누른 시각(ms). 더 안 누르면 기록 화면을 연다
     stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
     phase = "choose"  # "choose": 비행기 고르기, "stats": 능력치 소개 화면
     hover = [0.0, 0.0, 0.0]  # 전투기마다 마우스를 올린 정도(0~1): 1.2배로 커지고 능력치 게이지가 나타난다
@@ -999,17 +1235,17 @@ def title_screen():
                         go = "select"
                     elif STATS_BACK.collidepoint(mouse):
                         go = "back"
-                    elif STATS_TITLE.collidepoint(mouse):  # 숨겨진 기능: Fighter N의 이름을 N번 누르면 Change Ticket을 들고 시작
+                    elif STATS_TITLE.collidepoint(mouse):  # 숨겨진 기능: Fighter N의 이름을 N번 누르면 S를 들고 시작
                         name_clicks += 1
-                        if name_clicks == selected_ship + 1 and not start_with_s:  # S를 이미 받기로 했다면 C는 받을 수 없다
-                            start_with_change = True
+                        if name_clicks == selected_ship + 1:
+                            start_with_s = True
                 if go == "select":
                     started = pygame.time.get_ticks()
                     preview_player = Player()
-                    preview_player.rerolls = 1 if start_with_change else 0
+                    preview_player.has_s = start_with_s
                 elif go == "back":
                     phase = "choose"
-                    start_with_change = False  # 다른 전투기를 고를 수 있으니 숨겨진 기능은 다시 켜야 한다
+                    start_with_s = False  # 다른 전투기를 고를 수 있으니 숨겨진 기능은 다시 켜야 한다
                 continue
             if e.type == pygame.KEYDOWN:
                 if e.key in (pygame.K_LEFT, pygame.K_a):  # 비행기 고르기
@@ -1018,26 +1254,25 @@ def title_screen():
                     selected_ship = min(2, selected_ship + 1)
                 elif pygame.K_1 <= e.key <= pygame.K_3:
                     selected_ship = e.key - pygame.K_1
+                elif e.key in (pygame.K_ESCAPE, pygame.K_BACKSPACE):  # 조작법 화면으로 돌아간다
+                    return "back"
                 else:  # 그 밖의 아무 키나 누르면 능력치 소개 화면으로
                     phase = "stats"
                     name_clicks = 0
             elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:  # 휠 굴리기(버튼 4, 5)나 오른쪽 클릭은 무시
                 mouse = (e.pos[0] / scale, e.pos[1] / scale)
                 clicked = [i for i, r in enumerate(slot_rects) if r.collidepoint(mouse)]
+                if SPLASH_BACK.collidepoint(mouse):
+                    return "back"
                 if clicked:  # 비행기를 클릭하면 선택, 빈 곳을 클릭하면 능력치 소개 화면으로
                     selected_ship = clicked[0]
-                elif BEST_BOX.collidepoint(mouse):  # 한 번 누르면 기록 화면, 빠르게 SECRET_CLICKS번 누르면 숨겨진 기능(S)
-                    best_pending = None if count_secret_click() else pygame.time.get_ticks()
+                elif BEST_BOX.collidepoint(mouse):  # 최고 점수 칸을 누르면 기록 화면
+                    records_screen()
                 else:
                     phase = "stats"
                     name_clicks = 0
 
         now = pygame.time.get_ticks()
-        if best_pending is not None and now - best_pending >= BEST_CLICK_DELAY:
-            best_pending = None
-            secret_clicks = 0
-            records_screen()
-            continue
         left = None if started is None else TITLE_COUNTDOWN - (now - started) / 1000
         if left is not None and left <= 0:
             return
@@ -1056,6 +1291,7 @@ def title_screen():
         if left is None:  # 카운트다운 중에는 게임 이름과 최고 점수 칸을 지운다
             t = title_font.render(GAME_TITLE, True, (120, 210, 255))
             screen.blit(t, t.get_rect(center=(W / 2, 110)))
+            draw_nav_back()
 
         # 카운트다운이 진행될수록(0→1) 게임 시작 화면과 같아진다: 비행기가 시작 위치로 내려가며 작아지고, 상단 표시가 나타난다
         p = 0.0 if left is None else min(1.0, 1 - left / TITLE_COUNTDOWN)
@@ -1122,14 +1358,11 @@ def title_screen():
 
 
 def main():
-    global start_with_s, start_with_change
+    global start_with_s
     player = Player()
-    if start_with_s:  # 타이틀의 숨겨진 기능: 시작하자마자 S 1개 (한 번만)
+    if start_with_s:  # 능력치 화면의 숨겨진 기능: 시작하자마자 S 1개 (한 번만)
         player.has_s = True
         start_with_s = False
-    if start_with_change:  # 능력치 화면의 숨겨진 기능: 시작하자마자 Change Ticket 1개 (한 번만)
-        player.rerolls = 1
-        start_with_change = False
     bullets, enemy_bullets, enemies, particles, items = [], [], [], [], []
     bombs, explosions = [], []
     fx = []  # 폭발 그림(보기만 하는 효과): [위치, 나이, 수명, 반경]
@@ -1146,7 +1379,16 @@ def main():
     yellow_spawn = 0
     fade = 0  # 보너스 라운드로 가기 전 적이 사라지는 중이면 남은 프레임
     s_charging, s_charge = False, 0  # S를 꾹 눌러 충전하는 중인가, 지금까지 누른 프레임
+    saved = False  # 이번 판의 점수를 순위표에 이미 넣었는가
     star_ms = 0
+
+    def save_run():
+        """이번 판의 점수를 순위표에 한 번만 넣는다."""
+        nonlocal saved
+        if not saved:
+            saved = True
+            save_best(score, level, play_frames // FPS)
+
     stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
 
     while True:
@@ -1157,7 +1399,7 @@ def main():
         was_shop = shop
         for e in pygame.event.get():
             if e.type == pygame.QUIT:
-                save_best(score, level, play_frames // FPS)  # 플레이 도중 창을 닫아도 최고 점수는 남긴다
+                save_run()  # 플레이 도중 창을 닫아도 점수는 남긴다
                 pygame.quit()
                 sys.exit()
             if e.type == pygame.MOUSEBUTTONDOWN and e.button == 3:
@@ -1168,7 +1410,7 @@ def main():
                 paused = not paused
             if paused and e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                 if PAUSE_HOME.collidepoint(e.pos[0] / scale, e.pos[1] / scale):
-                    save_best(score, level, play_frames // FPS)  # 홈으로 나가도 그때까지의 점수는 최고 점수에 반영
+                    save_run()  # 홈으로 나가도 그때까지의 점수는 기록에 반영
                     return "home"
             if shop and confirm_idx is not None:  # 구매 확인 화면: Buy면 구매, Back이면 상점으로
                 if e.type == pygame.KEYDOWN:
@@ -1463,7 +1705,7 @@ def main():
                     if player.hp <= 0:
                         game_over = True
                         add_fx(fx, player.pos, 70, 40)  # 내 전투기가 쓰러지는 큰 폭발
-                        save_best(score, level, play_frames // FPS)
+                        save_run()
 
         if not paused and not shop:
             for p in particles:
@@ -1599,18 +1841,26 @@ def main():
 
 
 def front_screens(skip_name=False):
-    """이름 화면 → 난이도 화면. 난이도 화면의 Back을 누르면 이름 화면으로 돌아간다."""
+    """이름 화면 → 난이도 화면 → 조작법(3쪽) → 전투기 고르기. 각 화면의 Back은 바로 앞 화면으로 돌아간다."""
+    step = "splash" if skip_name else "name"
     while True:
-        if not skip_name:
+        if step == "name":
             name_screen()  # 가장 먼저: 이름 입력(또는 게스트)
-        skip_name = False
-        if splash_screen() != "back":
-            return
+            step = "splash"
+        elif step == "splash":
+            step = "name" if splash_screen() == "back" else "controls"
+        elif step == "controls":
+            step = "splash" if controls_screen(CONTROL_START[0]) == "back" else "title"
+            CONTROL_START[0] = 0
+        else:
+            if title_screen() == "back":
+                CONTROL_START[0] = len(CONTROL_PAGES) - 1  # 전투기 고르기에서 Back이면 조작법의 마지막 쪽으로
+                step = "controls"
+            else:
+                return
 
 
 front_screens()
-title_screen()
 while True:
-    if main() == "home":  # 일시정지 화면에서 홈으로 나온 경우: 첫 화면부터 다시
-        front_screens(skip_name=True)  # 홈으로 오면 난이도 화면부터 (거기서 Back이면 이름 화면)
-        title_screen()
+    if main() == "home":  # 일시정지 화면에서 홈으로 나온 경우: 난이도 화면부터 다시 (거기서 Back이면 이름 화면)
+        front_screens(skip_name=True)
