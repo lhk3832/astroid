@@ -71,6 +71,7 @@ YELLOW_SCORE_MULT = 1.5  # 노란 적은 다른 적 점수의 1.5배
 # drop_mult: P/R/B 아이템 드롭률에 곱함 (코인과 S는 그대로) / kill_score: 적 1마리를 무찌를 때 얻는 점수
 game_mode = "Normal"  # 지금 고른 난이도
 player_name = "Guest"  # 맨 앞 화면에서 입력한 플레이어 이름 (게스트면 "Guest")
+is_guest = True  # 게스트 모드(이름 없이 시작)인가: 그러면 점수를 기록에 남기지 않는다 (이름으로 "Guest"라고 쓴 것과는 다르다)
 B_START = 3          # 처음 가지고 있는 폭탄 B 개수
 B_RADIUS = 150
 
@@ -117,6 +118,7 @@ NAME_BOX = pygame.Rect(W // 2 - 215, 418, 430, 48)      # 이름 화면의 이�
 GUEST_BUTTON = pygame.Rect(W // 2 - 215, 505, 430, 52)  # 이름 화면의 "Play In Guest Mode" 버튼
 NAME_MAX = 10  # 이름 최대 글자 수
 SPLASH_BACK = pygame.Rect(12, 38, 92, 34)  # 난이도 화면 왼쪽 위의 Back 버튼 (이름 화면으로)
+SPLASH_TUTORIAL = pygame.Rect(W - 132, 38, 120, 34)  # 난이도 화면 오른쪽 위의 Tutorial 버튼 (조작법 3쪽을 보고 시작)
 MODE_COLORS = {"Easy": (90, 210, 120), "Normal": (110, 170, 255), "Hard": (255, 100, 100)}
 BEST_BOX = pygame.Rect(0, 0, 430, 46)  # 모드 버튼 줄과 같은 길이
 BEST_BOX.center = (W // 2, H - 55)  # 타이틀의 최고 점수 칸
@@ -407,6 +409,8 @@ def save_best(score, level=0, seconds=0):
     """게임 한 판의 결과를 현재 모드의 순위표(1~10위)에 넣고 파일에 저장한다 (점수, 오늘 날짜, 고른 전투기, 레벨, 플레이 시간, 이름).
     점수가 xxxx.5처럼 .5로 끝나면 기록할 때는 0.5를 뺀 점수로 적는다 (화면에 보이는 점수는 그대로).
     10위 안에 들지 못하면 기록하지 않는다."""
+    if is_guest:  # 게스트 모드로 한 판은 기록(파일, 브라우저, 공용 순위표)에 영향을 주지 않는다
+        return
     if score != int(score):
         score -= 0.5
     score = int(score)
@@ -1182,7 +1186,7 @@ async def ranking_screen(mode):
 async def name_screen():
     """게임을 켜면 가장 먼저 나오는 화면: 제목과 비행기, 그 아래에 "Player's name", 이름을 입력하는 칸, "Play In Guest Mode" 버튼.
     칸을 클릭하면 이름을 입력할 수 있고(Enter로 확인), 버튼을 누르면 이름 없이(Guest) 시작한다."""
-    global player_name
+    global player_name, is_guest
     stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
     text = "" if player_name == "Guest" else player_name  # 다시 돌아오면 지난 이름을 채워 둔다
     active = False  # 입력 칸을 클릭해서 입력 중인가
@@ -1195,6 +1199,7 @@ async def name_screen():
                 mouse = (e.pos[0] / scale, e.pos[1] / scale)
                 if GUEST_BUTTON.collidepoint(mouse):
                     player_name = "Guest"
+                    is_guest = True  # 게스트 모드: 기록에 남지 않는다
                     pygame.key.stop_text_input()
                     return
                 active = NAME_BOX.collidepoint(mouse)
@@ -1209,6 +1214,7 @@ async def name_screen():
                     text = text[:-1]
                 elif e.key in (pygame.K_RETURN, pygame.K_KP_ENTER) and text.strip():
                     player_name = text.strip()
+                    is_guest = False
                     pygame.key.stop_text_input()
                     return
                 elif e.key == pygame.K_ESCAPE:
@@ -1378,7 +1384,8 @@ async def controls_screen(page=0):
 async def splash_screen():
     """게임을 켜면 가장 먼저 나오는 화면: 제목, 큰 일반 비행기(1번), Easy/Normal/Hard 버튼, "Press To Start", 최고 점수.
     버튼(또는 ← →)으로 난이도를 고르고, 그 밖의 아무 키나 클릭을 하면 전투기 고르기 화면으로 간다.
-    최고 점수 칸을 누르면 모드별 최고 기록 화면이 열린다. 왼쪽 위의 Back 버튼(또는 Esc)을 누르면 "back"을 돌려줘서 이름 화면으로 돌아간다."""
+    최고 점수 칸을 누르면 모드별 최고 기록 화면이 열린다. 왼쪽 위의 Back 버튼(또는 Esc)을 누르면 "back"을 돌려줘서 이름 화면으로 돌아간다.
+    오른쪽 위의 Tutorial 버튼을 누르면 "tutorial"을 돌려줘서 조작법 3쪽을 보여 준다 (그냥 시작하면 조작법을 건너뛴다)."""
     global game_mode
     stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
     names = list(MODES)
@@ -1401,6 +1408,8 @@ async def splash_screen():
                 clicked = [name for name, r in zip(names, MODE_BUTTONS) if r.collidepoint(mouse)]
                 if SPLASH_BACK.collidepoint(mouse):
                     return "back"
+                if SPLASH_TUTORIAL.collidepoint(mouse):  # Tutorial: 조작법 3쪽을 보고 시작
+                    return "tutorial"
                 if clicked:  # 버튼을 누르면 그 난이도를 고른다
                     game_mode = clicked[0]
                 elif BEST_BOX.collidepoint(mouse):  # 최고 점수 칸을 누르면 기록 화면
@@ -1417,6 +1426,11 @@ async def splash_screen():
         screen.blit(t, t.get_rect(center=(W / 2, 100)))
         screen.blit(small_font.render(f"Player: {player_name}", True, (150, 155, 185)), (12, 10))
         draw_nav_back()
+        mx, my = pygame.mouse.get_pos()
+        pygame.draw.rect(screen, (60, 75, 125) if SPLASH_TUTORIAL.collidepoint(mx / scale, my / scale) else (35, 42, 80), SPLASH_TUTORIAL, border_radius=8)
+        pygame.draw.rect(screen, (255, 220, 70), SPLASH_TUTORIAL, 2, border_radius=8)
+        t = small_font.render("Tutorial", True, (255, 240, 170))
+        screen.blit(t, t.get_rect(center=SPLASH_TUTORIAL.center))
         if SPLASH_SPRITE:
             screen.blit(SPLASH_SPRITE, SPLASH_SPRITE.get_rect(center=(W / 2, 262 + math.sin(now / 300) * 6)))
         mouse = pygame.mouse.get_pos()
@@ -2110,21 +2124,28 @@ async def main():
 
 
 async def front_screens(skip_name=False):
-    """이름 화면 → 난이도 화면 → 조작법(3쪽) → 전투기 고르기. 각 화면의 Back은 바로 앞 화면으로 돌아간다."""
+    """이름 화면 → 난이도 화면 → (Tutorial을 눌렀을 때만) 조작법 3쪽 → 전투기 고르기. 각 화면의 Back은 바로 앞 화면으로 돌아간다.
+    난이도 화면에서 그냥 시작하면 조작법 없이 바로 전투기 고르기로 가고, 거기서 Back이면 난이도 화면으로 돌아간다."""
     step = "splash" if skip_name else "name"
+    via_tutorial = False  # 조작법 화면을 거쳐 왔는가
     while True:
         if step == "name":
             await name_screen()  # 가장 먼저: 이름 입력(또는 게스트)
             step = "splash"
         elif step == "splash":
-            step = "name" if await splash_screen() == "back" else "controls"
+            r = await splash_screen()
+            via_tutorial = r == "tutorial"
+            step = "name" if r == "back" else ("controls" if via_tutorial else "title")
         elif step == "controls":
             step = "splash" if await controls_screen(CONTROL_START[0]) == "back" else "title"
             CONTROL_START[0] = 0
         else:
             if await title_screen() == "back":
-                CONTROL_START[0] = len(CONTROL_PAGES) - 1  # 전투기 고르기에서 Back이면 조작법의 마지막 쪽으로
-                step = "controls"
+                if via_tutorial:
+                    CONTROL_START[0] = len(CONTROL_PAGES) - 1  # 조작법을 보고 왔으면 그 마지막 쪽으로
+                    step = "controls"
+                else:
+                    step = "splash"
             else:
                 return
 
