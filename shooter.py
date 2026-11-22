@@ -111,7 +111,7 @@ PRESS_BAR = pygame.Rect(W // 2 - 215, 448, 430, 60)  # 첫 화면의 "Press To S
 RECORDS_BACK = pygame.Rect(W // 2 - 90, 505, 180, 50)  # 기록 화면의 Back 버튼
 NAME_BOX = pygame.Rect(W // 2 - 215, 418, 430, 48)      # 이름 화면의 이름 입력 칸
 GUEST_BUTTON = pygame.Rect(W // 2 - 215, 505, 430, 52)  # 이름 화면의 "Play In Guest Mode" 버튼
-NAME_MAX = 12  # 이름 최대 글자 수
+NAME_MAX = 10  # 이름 최대 글자 수
 SPLASH_BACK = pygame.Rect(12, 38, 92, 34)  # 난이도 화면 왼쪽 위의 Back 버튼 (이름 화면으로)
 MODE_COLORS = {"Easy": (90, 210, 120), "Normal": (110, 170, 255), "Hard": (255, 100, 100)}
 BEST_BOX = pygame.Rect(0, 0, 430, 46)  # 모드 버튼 줄과 같은 길이
@@ -252,6 +252,89 @@ def top_record(mode):
     return rankings[mode][0] if rankings[mode] else empty_record()
 
 
+# 공용 순위표 (웹 버전 전용): Supabase 표 scores에 점수를 보내고 불러온다. 아래 두 값이 비어 있으면 꺼진다(웹도 지금처럼 그 탭에서만 기록).
+# 주소와 anon(공개) 키는 코드에 넣어도 된다. 순위표 표는 읽기/추가만 허용하도록 만들어져 있다 (README의 "공용 순위표" 참고). service_role 키는 절대 넣지 않는다.
+SUPABASE_URL = ""  # 예: "https://abcdefgh.supabase.co"
+SUPABASE_KEY = ""  # anon(publishable) 키
+ONLINE = WEB and bool(SUPABASE_URL) and bool(SUPABASE_KEY)
+_online_frames = 0
+
+
+def _js(code):
+    import platform  # 브라우저(pygbag)에서만 있는 모듈
+    return platform.window.eval(code)
+
+
+def online_setup():
+    """브라우저에 서버와 주고받는 작은 자바스크립트 함수를 만들어 둔다 (파이썬은 결과를 window 변수에서 읽는다)."""
+    if not ONLINE:
+        return
+    _js("""
+    window.astroid_top = {}; window.astroid_post_state = "";
+    window.astroid_hdr = function(){ return {"apikey": %s, "Authorization": "Bearer " + %s}; };
+    window.astroid_post = function(body){
+      var h = window.astroid_hdr(); h["Content-Type"] = "application/json"; h["Prefer"] = "return=minimal";
+      fetch(%s + "/rest/v1/scores", {method: "POST", headers: h, body: body})
+        .then(function(r){ window.astroid_post_state = r.ok ? "ok" : "fail"; })
+        .catch(function(){ window.astroid_post_state = "fail"; });
+    };
+    window.astroid_fetch = function(mode){
+      fetch(%s + "/rest/v1/scores?mode=eq." + mode + "&select=score,player,ship,level,play_time,created_at&order=score.desc,created_at.asc&limit=%d",
+            {headers: window.astroid_hdr()})
+        .then(function(r){ return r.text(); })
+        .then(function(t){ window.astroid_top[mode] = t; })
+        .catch(function(){});
+    };
+    """ % (json.dumps(SUPABASE_KEY), json.dumps(SUPABASE_KEY), json.dumps(SUPABASE_URL), json.dumps(SUPABASE_URL), RANK_SIZE))
+
+
+def online_refresh():
+    """세 모드의 1~10위를 서버에서 다시 불러오라고 시킨다 (도착하면 online_tick이 rankings에 넣는다)."""
+    if ONLINE:
+        for mode in MODES:
+            _js("window.astroid_fetch(%s)" % json.dumps(mode))
+
+
+def online_post(score, level, seconds):
+    """이번 판의 점수를 서버에 보낸다 (실패해도 게임은 계속한다)."""
+    if not ONLINE:
+        return
+    body = {"mode": game_mode, "score": int(score), "player": (player_name or "Guest")[:NAME_MAX],
+            "ship": SHIP_NAMES[selected_ship], "level": int(level), "play_time": int(seconds)}
+    try:
+        _js("window.astroid_post_state = ''; window.astroid_post(%s)" % json.dumps(json.dumps(body)))
+    except Exception:
+        pass
+
+
+def online_tick():
+    """프레임마다 부른다: 보낸 점수가 도착했으면 순위표를 다시 불러오고, 도착한 순위표를 rankings에 넣는다. 30초마다 다시 불러온다."""
+    global _online_frames
+    if not ONLINE:
+        return
+    _online_frames += 1
+    if _online_frames % 20:
+        return
+    try:
+        if _js("window.astroid_post_state") == "ok":
+            _js("window.astroid_post_state = ''")
+            online_refresh()
+        if _online_frames % (FPS * 30) == 0:
+            online_refresh()
+        for mode in MODES:
+            text = _js("(window.astroid_top[%s] || '')" % json.dumps(mode))
+            if text:
+                _js("window.astroid_top[%s] = ''" % json.dumps(mode))
+                recs = []
+                for row in json.loads(text):
+                    recs.append({"score": int(row.get("score", 0)), "date": str(row.get("created_at", ""))[:10],
+                                 "ship": row.get("ship") or "", "level": int(row.get("level") or 0),
+                                 "time": int(row.get("play_time") or 0), "player": row.get("player") or ""})
+                rankings[mode] = recs[:RANK_SIZE]
+    except Exception:
+        pass  # 인터넷이 안 되거나 응답이 이상해도 게임은 계속한다
+
+
 def save_best(score, level=0, seconds=0):
     """게임 한 판의 결과를 현재 모드의 순위표(1~10위)에 넣고 파일에 저장한다 (점수, 오늘 날짜, 고른 전투기, 레벨, 플레이 시간, 이름).
     점수가 xxxx.5처럼 .5로 끝나면 기록할 때는 0.5를 뺀 점수로 적는다 (화면에 보이는 점수는 그대로).
@@ -259,6 +342,10 @@ def save_best(score, level=0, seconds=0):
     if score != int(score):
         score -= 0.5
     score = int(score)
+    if ONLINE:  # 공용 순위표: 서버에 보낸다 (순위 판단과 저장은 서버 쪽 표가 한다)
+        if score > 0:
+            online_post(score, level, seconds)
+        return
     ranks = rankings[game_mode]
     if score <= 0 or (len(ranks) >= RANK_SIZE and score <= ranks[-1]["score"]):
         return
@@ -774,7 +861,7 @@ def draw_best_box():
     """최고 점수 칸(My best Score). 첫 화면과 전투기 고르기 화면에 똑같이 나오고, 누르면 기록 화면이 열린다."""
     pygame.draw.rect(screen, (24, 28, 56), BEST_BOX, border_radius=8)
     pygame.draw.rect(screen, (255, 220, 70), BEST_BOX, 2, border_radius=8)
-    t = font.render(f"My best Score  {fmt_score(top_record(game_mode)['score'])}", True, (255, 240, 170))
+    t = font.render(f"{'Top' if ONLINE else 'My best'} Score  {fmt_score(top_record(game_mode)['score'])}", True, (255, 240, 170))
     screen.blit(t, t.get_rect(center=BEST_BOX.center))
 
 
@@ -856,6 +943,7 @@ async def records_screen():
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
+        online_tick()
         await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
 
 
@@ -995,6 +1083,7 @@ async def ranking_screen(mode):
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
+        online_tick()
         await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
 
 
@@ -1071,6 +1160,7 @@ async def name_screen():
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
+        online_tick()
         await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
 
 
@@ -1189,6 +1279,7 @@ async def controls_screen(page=0):
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
+        online_tick()
         await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
 
 
@@ -1256,6 +1347,7 @@ async def splash_screen():
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
+        online_tick()
         await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
 
 
@@ -1343,6 +1435,7 @@ async def title_screen():
             window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
             pygame.display.flip()
             clock.tick(FPS)
+            online_tick()
             await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
             continue
 
@@ -1413,6 +1506,7 @@ async def title_screen():
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
+        online_tick()
         await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
 
 
@@ -1897,6 +1991,7 @@ async def main():
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
+        online_tick()
         await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
 
 
@@ -1921,6 +2016,8 @@ async def front_screens(skip_name=False):
 
 
 async def run():
+    online_setup()
+    online_refresh()
     await front_screens()
     while True:
         if await main() == "home":  # 일시정지 화면에서 홈으로 나온 경우: 난이도 화면부터 다시 (거기서 Back이면 이름 화면)
