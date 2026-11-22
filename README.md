@@ -142,28 +142,15 @@ python shooter.py
 - 만들기: `python build_web.py` (pygbag이 필요하다: `pip install pygbag`). `shooter.py`와 `assets/`를 pygbag으로 빌드해서 `docs/`에 넣는다. 게임을 고친 뒤에는 다시 빌드해서 `docs/`까지 커밋해야 웹에도 반영된다.
 - 웹에서 다른 점: 글꼴이 pygame 기본 글꼴이고(한글 이름은 안 보일 수 있다), 최고 기록은 파일 대신 그 브라우저의 저장소(localStorage, 키 `astroid_best`)에 저장돼서 새로고침하거나 다시 들어와도 남는다 (같은 브라우저에서만 보이고, 사이트 데이터를 지우거나 시크릿 창이면 사라진다). 처음 열 때 게임 엔진을 내려받느라 몇 초 걸린다.
 
-## 공용 순위표 (웹 버전, Supabase)
+## 공용 순위표 (웹 버전, 내 호스팅의 PHP + MariaDB/MySQL)
 
-- 켜는 법: `shooter.py` 위쪽 `SUPABASE_URL`, `SUPABASE_KEY`(anon 공개 키)에 값을 넣고 `python build_web.py` → `docs/` 푸시. 둘 중 하나라도 비어 있으면 꺼져 있고(웹도 그 브라우저에만 기록), 데스크톱은 늘 내 컴퓨터 파일(`best_score.txt`)에 저장한다.
-- 켜져 있으면: 웹에서 한 판이 끝날 때(게임 오버/홈/창 닫기 중 먼저) 점수(1 이상)를 서버 표 `scores`에 보낸다 (이름은 10자까지, 안 쓰면 Guest). 순위 화면(Best Records / Top 10)과 최고 점수 칸("Top Score")은 모든 플레이어의 점수에서 모드별 1~10위를 서버에서 불러와 보여 준다 (시작할 때, 점수를 보낸 직후, 그 뒤 30초마다 새로 불러온다). 인터넷이 안 되면 점수를 보내지 못하지만 게임은 그대로 된다.
-- 서버 표 만들기 (Supabase SQL Editor에서 한 번):
-
-```sql
-create table scores (
-  id bigint generated always as identity primary key,
-  mode text not null check (mode in ('Easy','Normal','Hard')),
-  score int not null check (score between 1 and 1000000),
-  player text not null check (char_length(player) between 1 and 10),
-  ship text,
-  level int,
-  play_time int,
-  created_at timestamptz default now()
-);
-alter table scores enable row level security;
-create policy "anyone can read" on scores for select using (true);
-create policy "anyone can add" on scores for insert with check (true);
-```
-
-  (이미 이름 길이 20으로 만들었다면: `alter table scores drop constraint scores_player_check; alter table scores add constraint scores_player_check check (char_length(player) between 1 and 10);`)
-- 한계: 코드가 브라우저에서 돌아서 마음먹으면 가짜 점수를 보낼 수 있다 (점수 1~1,000,000, 이름 10자로만 제한). 이름은 모두에게 공개된다. 점수를 고치거나 지우는 건 정책으로 막혀 있고, 지우려면 Supabase 화면에서 직접 한다.
-
+- 구조: 게임(github.io)이 내 호스팅(카페24 등)에 올려 둔 `server/scores.php`로 점수를 보내고(POST) 순위를 불러온다(GET `?mode=Normal&limit=10`). DB 비밀번호는 호스팅의 `config.php`에만 있고 게임 코드/GitHub에는 없다.
+- 켜는 법
+  1. phpMyAdmin(또는 DB 관리)에서 `server/schema.sql`을 실행해 표 `scores`를 만든다.
+  2. `server/config.sample.php`를 `config.php`로 복사해서 DB 정보(호스트, 이름, 아이디, 비밀번호)와 `IP_SALT`(아무 긴 글자)를 채운다. `ALLOWED_ORIGIN`은 게임 주소(`https://lhk3832.github.io`)다.
+  3. `scores.php`와 `config.php`를 호스팅의 같은 폴더(예: `/astroid/`)에 FTP로 올린다.
+  4. 브라우저에서 `https://내도메인/astroid/scores.php?mode=Normal`을 열어 `[]`가 나오는지 본다.
+  5. `shooter.py` 위쪽 `SCORES_URL`에 그 주소(`https://내도메인/astroid/scores.php`)를 넣고 `python build_web.py` → 푸시.
+  - 주소는 반드시 **https**여야 한다 (게임이 https라 http 서버는 브라우저가 막는다). 비어 있으면 꺼져 있고(웹도 그 브라우저에만 기록), 데스크톱은 늘 내 컴퓨터 파일(`best_score.txt`)에 저장한다.
+- 켜져 있으면: 웹에서 한 판이 끝날 때(게임 오버/홈/창 닫기 중 먼저) 점수(1 이상)를 서버에 보낸다 (이름은 10자까지, 안 쓰면 Guest). 순위 화면(Best Records / Top 10)과 최고 점수 칸("Top Score")은 모든 플레이어의 점수에서 모드별 1~10위를 서버에서 불러와 보여 준다 (시작할 때, 점수를 보낸 직후, 그 뒤 30초마다). 인터넷이 안 되면 점수를 보내지 못하지만 게임은 그대로 된다.
+- 서버의 보호: 점수 1~1,000,000, 이름 10자, 같은 접속자는 1분에 6번까지(접속 주소는 섞어서 줄인 값만 저장), 모드/전투기 이름 확인. 그래도 코드가 브라우저에서 돌아서 마음먹으면 가짜 점수를 보낼 수 있고, 이름은 모두에게 공개된다. 점수를 지우려면 phpMyAdmin에서 `scores` 표의 행을 직접 지운다.
