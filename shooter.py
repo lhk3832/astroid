@@ -1,4 +1,5 @@
 import asyncio
+import colorsys
 import datetime
 import json
 import math
@@ -364,6 +365,7 @@ PLAYER_SPRITES = [load_sprite(f"player_{i}.png", PLAYER_SPRITE_SIZE) for i in (1
 TITLE_SPRITES = [load_sprite(f"player_{i}.png", TITLE_SPRITE_SIZE) for i in (1, 2, 3)]
 SPLASH_SPRITE = load_sprite("player_1.png", SPLASH_SPRITE_SIZE)  # 첫 화면의 큰 일반 비행기(1번)
 EXPLOSION_SPRITE = load_sprite("explosion.png", 208)  # 적 전투기가 폭발할 때의 그림(원본 크기, 그릴 때 크기를 바꾼다)
+EXPLOSION_FIREBALL = 0.86  # 이 그림에서 불덩이(구름 부분)가 차지하는 가로 비율. 폭탄 폭발은 불덩이 크기를 폭발 반경에 맞춘다
 selected_ship = 0  # 타이틀에서 고른 비행기 번호(0~2)
 start_with_s = False  # 전투기 고르기의 숨겨진 기능(Confirmed 표시를 누름)으로 켜지면 다음 게임을 S(무지개 폭탄) 1개와 함께 시작
 
@@ -692,6 +694,61 @@ def draw_fx(fx):
             pygame.draw.circle(layer, (255, 255 - int(70 * k), 255 - int(190 * k), a), c, max(1, int(r * 0.55 * (1 - t))))
         pygame.draw.circle(layer, (255, 220, 120, int(a * 0.8)), c, max(2, int(r * (0.55 + 1.0 * t))), 3)  # 퍼지는 고리
         screen.blit(layer, (pos.x - size / 2, pos.y - size / 2))
+
+
+def blast_sprite(center, diameter, alpha):
+    """폭발 그림을 불덩이 지름이 diameter(px)가 되게 그린다 (그림 비율은 그대로)."""
+    if alpha <= 0:
+        return
+    w = max(2, min(1700, int(diameter / EXPLOSION_FIREBALL)))
+    h = max(2, int(w * EXPLOSION_SPRITE.get_height() / EXPLOSION_SPRITE.get_width()))
+    img = pygame.transform.scale(EXPLOSION_SPRITE, (w, h))
+    img.set_alpha(min(255, alpha))
+    screen.blit(img, img.get_rect(center=(int(center[0]), int(center[1]))))
+
+
+def rainbow(k, a=255):
+    """k(0~1)에 따른 무지개 색 (S는 무지개 폭탄이라 화려한 효과에 쓴다)"""
+    r, g, b = colorsys.hsv_to_rgb(k % 1.0, 0.75, 1.0)
+    return (int(r * 255), int(g * 255), int(b * 255), a)
+
+
+def draw_player_blast(ex):
+    """내가 터뜨린 폭탄(B, S)의 폭발 그림. 폭발 이미지(assets/explosion.png)가 커지며 사라진다.
+    크기는 예전 원과 같다: 불덩이 반경이 폭발 반경 ex[2]의 약 0.55배에서 1.15배까지 커진다 (B 150px, S 600px).
+    S(큰 폭발, ex[2] > 200)는 더 화려하게: 번쩍이는 화면 섬광, 무지개 고리, 사방으로 터지는 작은 폭발, 퍼져 나가는 불꽃."""
+    pos, left, r, total = ex[0], ex[1], ex[2], ex[3]
+    p = 1 - left / total  # 0 → 1 (시간이 흐른 정도)
+    big = r > 200
+    ease = 1 - (1 - p) ** 3  # 처음에 빠르게 커진다
+    layer = pygame.Surface((W, H), pygame.SRCALPHA)
+    ring_r = r * (0.6 + 0.6 * ease)
+    pygame.draw.circle(layer, (255, 220, 120, int(190 * (1 - p))), pos, ring_r, 6 if big else 3)  # 퍼지는 고리 (범위 표시)
+    if big:
+        for k in range(4):  # 무지개 고리: 하나씩 시간차를 두고 퍼진다
+            q = max(0.0, min(1.0, p * 1.5 - k * 0.12))
+            if 0 < q < 1:
+                pygame.draw.circle(layer, rainbow(k / 4 + p * 0.5, int(210 * (1 - q))), pos, r * (0.2 + 0.95 * q), 5)
+        if p < 0.3:  # 화면이 번쩍
+            layer.fill((255, 255, 235, int(170 * (1 - p / 0.3))), special_flags=pygame.BLEND_RGBA_MAX)
+    elif p < 0.2:  # B도 첫 순간에 작게 번쩍
+        pygame.draw.circle(layer, (255, 255, 230, int(200 * (1 - p / 0.2))), pos, r * 0.45)
+    screen.blit(layer, (0, 0))
+    # 처음엔 또렷하고 뒤로 가며 사라진다 (끝까지 흐릿하게 남으면 어두운 배경에서 회색 안개로 보여서 p=0.8에서 끝낸다).
+    # S는 화면 전체를 덮으므로 조금 반투명하게 해서 뒤의 적과 총알이 비친다
+    alpha = int((200 if big else 255) * (1 - min(1.0, max(0.0, (p - 0.25) / 0.55)) ** 1.3))
+    blast_sprite(pos, 2 * r * (0.55 + 0.6 * ease), alpha)
+    if big:
+        for off, delay, k in (ex[5] if len(ex) > 5 else []):  # 사방에서 터지는 작은 폭발
+            q = (p * total - delay) / 14
+            if 0 <= q <= 1:
+                blast_sprite((pos[0] + off[0], pos[1] + off[1]), 2 * r * 0.4 * k * (0.5 + 0.7 * q), int(255 * (1 - q * q)))
+        for i in range(30):  # 불꽃: 가운데에서 사방으로 뻗는다
+            ang = i * 2.399963  # 황금각: 골고루 퍼진다
+            d0, d1 = r * (0.1 + 0.9 * ease * (0.6 + 0.4 * ((i * 7) % 5) / 4)), r * (0.1 + 0.9 * ease * (0.6 + 0.4 * ((i * 7) % 5) / 4)) * 1.12
+            a1 = (pos[0] + math.cos(ang) * d0, pos[1] + math.sin(ang) * d0)
+            a2 = (pos[0] + math.cos(ang) * d1, pos[1] + math.sin(ang) * d1)
+            pygame.draw.line(screen, rainbow(i / 30 + p)[:3], a1, a2, 3)
 
 
 def draw_bomb_icon(center, rainbow=False, r=11, surf=None):
@@ -2048,7 +2105,12 @@ async def main():
                 else:
                     s_charging = False
             if blast_radius:
-                explosions.append([player.pos.copy(), 30, blast_radius, 30, True])  # 마지막 True: 내가 터뜨린 폭발
+                bursts = []  # S(큰 폭발)만: 사방에서 시간차로 터지는 작은 폭발 [(자리 차이, 늦게 시작하는 프레임, 크기 배율)]
+                if blast_radius > 200:
+                    for _ in range(8):
+                        ang, dist = random.uniform(0, math.tau), random.uniform(0.2, 0.85) * blast_radius
+                        bursts.append((pygame.Vector2(math.cos(ang), math.sin(ang)) * dist, random.randint(0, 14), random.uniform(0.55, 1.0)))
+                explosions.append([player.pos.copy(), 30, blast_radius, 30, True, bursts])  # 마지막 True: 내가 터뜨린 폭발
                 play_explosion()
                 for en in enemies:
                     if en.pos.distance_to(player.pos) < blast_radius + en.radius:  # 폭탄에 닿은 적은 바로 사라지고, 총알로 잡은 것처럼 아이템도 떨어뜨린다
@@ -2178,12 +2240,17 @@ async def main():
         if explosions:  # 폭탄 폭발: 반투명하게 그려서 S처럼 화면을 덮는 큰 폭발에서도 뒤가 보인다
             blast_layer = pygame.Surface((W, H), pygame.SRCALPHA)
             for ex in explosions:
+                if len(ex) > 4 and ex[4]:  # 내가 터뜨린 폭탄(B/S)은 폭발 그림으로 따로 그린다
+                    continue
                 t = ex[1] / ex[3]  # 1 → 0
                 big_blast = ex[2] > 200
                 pygame.draw.circle(blast_layer, (255, 120, 20, int((70 if big_blast else 150) * t + 20)), ex[0], ex[2] * (1.2 - 0.2 * t))
                 pygame.draw.circle(blast_layer, (255, 170, 40, int((130 if big_blast else 220) * t + 20)), ex[0], max(1, ex[2] * 0.5 * t))  # 낮은 투명도의 밝은 색은 회색으로 보여서 주황 계열로 둔다
                 pygame.draw.circle(blast_layer, (255, 230, 150, int(220 * t + 35)), ex[0], ex[2] * (1.2 - 0.2 * t), 6 if big_blast else 3)  # 바깥 고리
             screen.blit(blast_layer, (0, 0))
+            for ex in explosions:
+                if len(ex) > 4 and ex[4]:
+                    draw_player_blast(ex)
         for it in items:  # 끌려오는 동안에도 모양은 그대로 (크기를 줄이거나 꼬리를 달지 않는다)
             pos, kind = it[0], it[1]
             fill, edge = ITEM_COLORS[kind]
