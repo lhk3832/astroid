@@ -294,7 +294,11 @@ def online_setup():
         return
     _js("""
     window.astroid_top = {}; window.astroid_post_state = "";
-    window.astroid_hdr = function(){ return {"apikey": %s, "Authorization": "Bearer " + %s}; };
+    window.astroid_hdr = function(){
+      var k = %s, h = {"apikey": k};
+      if (k.indexOf("eyJ") === 0) h["Authorization"] = "Bearer " + k;  // 예전 JWT 형식 키만 Authorization도 보낸다 (sb_publishable_ 키는 apikey만)
+      return h;
+    };
     window.astroid_post = function(body){
       var h = window.astroid_hdr(); h["Content-Type"] = "application/json"; h["Prefer"] = "return=minimal";
       fetch(%s + "/rest/v1/scores", {method: "POST", headers: h, body: body})
@@ -308,7 +312,7 @@ def online_setup():
         .then(function(t){ window.astroid_top[mode] = t; })
         .catch(function(){});
     };
-    """ % (json.dumps(SUPABASE_KEY), json.dumps(SUPABASE_KEY), json.dumps(SUPABASE_URL), json.dumps(SUPABASE_URL), RANK_SIZE))
+    """ % (json.dumps(SUPABASE_KEY), json.dumps(SUPABASE_URL), json.dumps(SUPABASE_URL), RANK_SIZE))
 
 
 def online_refresh():
