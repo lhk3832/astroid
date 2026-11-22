@@ -69,8 +69,8 @@ B_START = 3          # 처음 가지고 있는 폭탄 B 개수
 B_RADIUS = 150
 
 B_DROP_RATE = 0.01  # 적 처치 시 B 아이템이 나올 확률
-COIN_DROP_RATE = 0.02         # 빨간/초록 적 처치 시 코인 아이템이 나올 확률
-YELLOW_COIN_DROP_RATE = 0.3   # 노란 적 처치 시 코인 아이템이 나올 확률 (노란 적은 코인만 떨어뜨림)
+COIN_DROP_RATE = 0.03         # 빨간/초록 적 처치 시 코인 아이템이 나올 확률
+YELLOW_COIN_DROP_RATE = 0.35   # 노란 적 처치 시 코인 아이템이 나올 확률 (노란 적은 코인만 떨어뜨림)
 MAGNET_RADIUS = 60  # 이 거리 안에 들어온 아이템은 나에게 빨려 들어옴
 MAGNET_ACCEL = 0.9      # 자석에 끌릴 때의 가속(px/프레임²). 가까울수록 최대 2배
 MAGNET_MAX_SPEED = 14   # 끌려오는 속도의 상한(px/프레임)
@@ -1062,6 +1062,7 @@ CONTROL_PAGES = [
     ]),
 ]
 CONTROLS_NEXT = pygame.Rect(W // 2 - 130, 505, 260, 50)
+CONTROLS_SKIP = pygame.Rect(W - 104, 38, 92, 34)  # 오른쪽 위: 설명을 건너뛰고 전투기 고르기로
 CONTROL_START = [0]  # 조작법 화면을 처음 열 쪽 (전투기 고르기에서 Back으로 오면 마지막 쪽)
 
 
@@ -1083,6 +1084,8 @@ def controls_screen(page=0):
                     go = "prev"
             if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                 mouse = (e.pos[0] / scale, e.pos[1] / scale)
+                if CONTROLS_SKIP.collidepoint(mouse):
+                    return  # 설명 넘기기: 바로 전투기 고르기로
                 if CONTROLS_NEXT.collidepoint(mouse):
                     go = "next"
                 elif SPLASH_BACK.collidepoint(mouse):
@@ -1101,6 +1104,12 @@ def controls_screen(page=0):
         for x, y, s in stars:
             pygame.draw.circle(screen, (90, 90, 130), (x, (y + now * s // 40) % H), s)
         draw_nav_back()
+        mx, my = pygame.mouse.get_pos()
+        hover = CONTROLS_SKIP.collidepoint(mx / scale, my / scale)
+        pygame.draw.rect(screen, (60, 75, 125) if hover else (35, 42, 80), CONTROLS_SKIP, border_radius=8)
+        pygame.draw.rect(screen, (150, 190, 255), CONTROLS_SKIP, 2, border_radius=8)
+        t = small_font.render("Skip →", True, (230, 235, 250))
+        screen.blit(t, t.get_rect(center=CONTROLS_SKIP.center))
         heading, rows = CONTROL_PAGES[page]
         t = big.render(heading, True, (120, 210, 255))
         screen.blit(t, t.get_rect(center=(W / 2, 75)))
