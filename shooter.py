@@ -108,7 +108,6 @@ SHOP_CHANGE = pygame.Rect(W // 2 - 230, 450, 220, 50)    # 상점 아래의 "Cha
 SHOP_CONTINUE = pygame.Rect(W // 2 + 10, 450, 220, 50)
 CONFIRM_BACK = pygame.Rect(W // 2 - 210, 525, 180, 50)  # 구매 확인 화면의 Back 버튼
 CONFIRM_BUY = pygame.Rect(W // 2 + 30, 525, 180, 50)    # 구매 확인 화면의 Buy 버튼
-STATS_TITLE = pygame.Rect(W // 2 - 190, 45, 380, 70)       # 능력치 소개 화면의 "Fighter N" 이름. 숨겨진 기능의 클릭 자리
 HOVER_SCALE = 0.2  # 타이틀에서 전투기에 마우스를 올렸을 때 더 커지는 비율(0.2 = 1.2배)
 SHOP_TITLE = "Star Market" # 보너스 라운드 상점 화면의 제목
 MODE_BUTTONS = [pygame.Rect(W // 2 - 215 + i * 150, 392, 130, 42) for i in range(3)]  # 첫 화면의 Easy / Normal / Hard 버튼 (가로 430px)
@@ -122,8 +121,6 @@ SPLASH_TUTORIAL = pygame.Rect(W - 132, 38, 120, 34)  # 난이도 화면 오른�
 MODE_COLORS = {"Easy": (90, 210, 120), "Normal": (110, 170, 255), "Hard": (255, 100, 100)}
 BEST_BOX = pygame.Rect(0, 0, 430, 46)  # 모드 버튼 줄과 같은 길이
 BEST_BOX.center = (W // 2, H - 55)  # 타이틀의 최고 점수 칸
-STATS_BACK = pygame.Rect(W // 2 - 210, 500, 180, 50)    # 능력치 소개 화면의 Back 버튼
-STATS_SELECT = pygame.Rect(W // 2 + 30, 500, 180, 50)   # 능력치 소개 화면의 Select 버튼
 PAUSE_HOME = pygame.Rect(300, 390, 200, 50)  # 일시정지 화면의 "Go Home" 버튼
 GAMEOVER_HOME = pygame.Rect(300, H // 2 + 65, 200, 50)  # 게임 오버 화면의 "Go Home" 버튼
 RAINBOW = [(255, 60, 60), (255, 150, 40), (255, 230, 60), (80, 210, 90), (70, 140, 255), (170, 90, 230)]
@@ -218,7 +215,7 @@ TITLE_SPRITES = [load_sprite(f"player_{i}.png", TITLE_SPRITE_SIZE) for i in (1, 
 SPLASH_SPRITE = load_sprite("player_1.png", SPLASH_SPRITE_SIZE)  # 첫 화면의 큰 일반 비행기(1번)
 EXPLOSION_SPRITE = load_sprite("explosion.png", 208)  # 적 전투기가 폭발할 때의 그림(원본 크기, 그릴 때 크기를 바꾼다)
 selected_ship = 0  # 타이틀에서 고른 비행기 번호(0~2)
-start_with_s = False  # 능력치 화면의 숨겨진 기능으로 켜지면 다음 게임을 S(무지개 폭탄) 1개와 함께 시작
+start_with_s = False  # 전투기 고르기의 숨겨진 기능(Confirmed 표시를 누름)으로 켜지면 다음 게임을 S(무지개 폭탄) 1개와 함께 시작
 
 
 def fade_color(color, alpha):
@@ -930,29 +927,6 @@ def draw_hover_stats(ship, cx, top, amt):
     screen.blit(layer, (cx - 100, top))
 
 
-def draw_stats_screen(ship, now):
-    """고른 비행기 소개 화면: 이름(Fighter N)과 전투기, 아래에 Back / Select 버튼이 있다."""
-    t = big.render(f"Fighter {ship + 1}", True, (120, 210, 255))
-    title_rect = t.get_rect(center=STATS_TITLE.center)
-    screen.blit(t, title_rect)
-    if start_with_s:  # 숨겨진 기능이 켜졌다는 표시: 이름 오른쪽에 무지개 폭탄 아이콘
-        draw_bomb_icon((title_rect.right + 34, title_rect.centery + 8), rainbow=True, r=13)
-
-    sprite = TITLE_SPRITES[ship]
-    if sprite:
-        big_ship = pygame.transform.smoothscale(sprite, (int(sprite.get_width() * 1.9), int(sprite.get_height() * 1.9)))
-        screen.blit(big_ship, big_ship.get_rect(center=(W / 2, 290 + math.sin(now / 300) * 6)))
-
-    mouse = pygame.mouse.get_pos()
-    mouse = (mouse[0] / scale, mouse[1] / scale)
-    for rect, text in ((STATS_BACK, "Back"), (STATS_SELECT, "Select")):
-        hover = rect.collidepoint(mouse)
-        pygame.draw.rect(screen, (70, 90, 150) if hover else (40, 50, 90), rect, border_radius=10)
-        pygame.draw.rect(screen, (255, 220, 70) if text == "Select" else (150, 190, 255), rect, 2, border_radius=10)
-        t = font.render(text, True, (240, 245, 255))
-        screen.blit(t, t.get_rect(center=rect.center))
-
-
 def draw_best_box():
     """최고 점수 칸(My best Score). 첫 화면과 전투기 고르기 화면에 똑같이 나오고, 누르면 기록 화면이 열린다."""
     pygame.draw.rect(screen, (24, 28, 56), BEST_BOX, border_radius=8)
@@ -1458,74 +1432,82 @@ async def splash_screen():
 
 
 async def title_screen():
+    """전투기 고르기 화면. 비행기를 한 번 누르면 고르고, 같은 비행기를 한 번 더 누르면(2번) 그 위에 "Confirmed"가 뜬다.
+    확인되면 아래 "Tap To Start" 바를 눌러(또는 Enter) 카운트다운을 거쳐 바로 시작한다. Back/Esc는 "back"을 돌려준다.
+    숨겨진 기능: 확인된 뒤 위에 뜬 "Confirmed" 표시를 selected_ship + 1번 누르면 S(무지개 폭탄)를 들고 시작한다."""
     global selected_ship, start_with_s
-    name_clicks = 0    # 능력치 화면에서 전투기 이름(Fighter N)을 클릭한 횟수
+    name_clicks = 0    # "Confirmed" 표시를 클릭한 횟수 (숨겨진 기능)
     stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
-    phase = "choose"  # "choose": 비행기 고르기, "stats": 능력치 소개 화면
     hover = [0.0, 0.0, 0.0]  # 전투기마다 마우스를 올린 정도(0~1): 1.2배로 커지고 능력치 게이지가 나타난다
-    started = None  # Select를 눌러 카운트다운을 시작한 시각(ms)
+    started = None  # Tap To Start를 눌러 카운트다운을 시작한 시각(ms)
     preview_player = None  # 카운트다운 때 게임 시작과 같은 상단 표시(체력, 폭탄 등)를 미리 보여주기 위한 값
+    taps, last_tap, confirmed = 0, None, False  # 같은 비행기를 연속으로 누른 횟수, 마지막으로 누른 비행기, 확인됐는가
     row_y = H / 2 - 30  # 비행기 3개가 놓이는 줄의 높이
     slot_x = [W / 2 + (i - 1) * 230 for i in range(3)]  # 비행기 3개가 놓이는 자리
     slot_rects = [pygame.Rect(0, 0, 170, 190) for _ in range(3)]
     for r, x in zip(slot_rects, slot_x):
         r.center = (x, row_y)
+    badge = pygame.Rect(0, 0, 124, 28)  # "Confirmed" 표시 (고른 비행기 테두리 위쪽 가운데에 걸친다)
+
+    def unconfirm():
+        nonlocal taps, last_tap, confirmed, name_clicks
+        global start_with_s
+        taps, last_tap, confirmed, name_clicks = 0, None, False, 0
+        start_with_s = False  # 다른 전투기를 고를 수 있으니 숨겨진 기능은 다시 켜야 한다
+
     while True:
+        badge.center = (slot_x[selected_ship], slot_rects[selected_ship].top)
         for e in pygame.event.get():
             if e.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
             if started is not None:
                 continue
-            if phase == "stats":  # 능력치 소개 화면: Select면 시작, Back이면 다시 고르기
-                go = None
-                if e.type == pygame.KEYDOWN:
-                    if e.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
-                        go = "select"
-                    elif e.key in (pygame.K_ESCAPE, pygame.K_BACKSPACE):
-                        go = "back"
-                elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
-                    mouse = (e.pos[0] / scale, e.pos[1] / scale)
-                    if STATS_SELECT.collidepoint(mouse):
-                        go = "select"
-                    elif STATS_BACK.collidepoint(mouse):
-                        go = "back"
-                    elif STATS_TITLE.collidepoint(mouse):  # 숨겨진 기능: Fighter N의 이름을 N번 누르면 S를 들고 시작
-                        name_clicks += 1
-                        if name_clicks == selected_ship + 1:
-                            start_with_s = True
-                if go == "select":
-                    started = pygame.time.get_ticks()
-                    preview_player = Player()
-                    preview_player.has_s = start_with_s
-                elif go == "back":
-                    phase = "choose"
-                    start_with_s = False  # 다른 전투기를 고를 수 있으니 숨겨진 기능은 다시 켜야 한다
-                continue
+            start_now = False
             if e.type == pygame.KEYDOWN:
                 if e.key in (pygame.K_LEFT, pygame.K_a):  # 비행기 고르기
                     selected_ship = max(0, selected_ship - 1)
+                    unconfirm()
                 elif e.key in (pygame.K_RIGHT, pygame.K_d):
                     selected_ship = min(2, selected_ship + 1)
+                    unconfirm()
                 elif pygame.K_1 <= e.key <= pygame.K_3:
                     selected_ship = e.key - pygame.K_1
-                elif e.key in (pygame.K_ESCAPE, pygame.K_BACKSPACE):  # 조작법 화면으로 돌아간다
+                    unconfirm()
+                elif e.key in (pygame.K_ESCAPE, pygame.K_BACKSPACE):  # 이전 화면으로 돌아간다
                     return "back"
-                else:  # 그 밖의 아무 키나 누르면 능력치 소개 화면으로
-                    phase = "stats"
-                    name_clicks = 0
+                elif e.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):  # 확인, 확인된 뒤에는 시작
+                    if confirmed:
+                        start_now = True
+                    else:
+                        taps, last_tap, confirmed = 2, selected_ship, True
             elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:  # 휠 굴리기(버튼 4, 5)나 오른쪽 클릭은 무시
                 mouse = (e.pos[0] / scale, e.pos[1] / scale)
                 clicked = [i for i, r in enumerate(slot_rects) if r.collidepoint(mouse)]
                 if SPLASH_BACK.collidepoint(mouse):
                     return "back"
-                if clicked:  # 비행기를 클릭하면 선택, 빈 곳을 클릭하면 능력치 소개 화면으로
-                    selected_ship = clicked[0]
+                if confirmed and badge.collidepoint(mouse):  # 숨겨진 기능: Confirmed 표시를 N번 누르면 S를 들고 시작
+                    name_clicks += 1
+                    if name_clicks == selected_ship + 1:
+                        start_with_s = True
+                elif clicked:  # 비행기를 누르면 고르고, 같은 비행기를 2번 누르면 확인
+                    i = clicked[0]
+                    if i == last_tap:
+                        taps += 1
+                    else:
+                        unconfirm()
+                        taps, last_tap = 1, i
+                    selected_ship = i
+                    if taps >= 2:
+                        confirmed = True
+                elif confirmed and PRESS_BAR.collidepoint(mouse):  # 확인된 뒤 Tap To Start를 누르면 바로 시작
+                    start_now = True
                 elif BEST_BOX.collidepoint(mouse):  # 최고 점수 칸을 누르면 기록 화면
                     await records_screen()
-                else:
-                    phase = "stats"
-                    name_clicks = 0
+            if start_now:
+                started = pygame.time.get_ticks()
+                preview_player = Player()
+                preview_player.has_s = start_with_s
 
         now = pygame.time.get_ticks()
         left = None if started is None else TITLE_COUNTDOWN - (now - started) / 1000
@@ -1535,15 +1517,6 @@ async def title_screen():
         screen.fill((10, 10, 30))
         for x, y, s in stars:
             pygame.draw.circle(screen, (90, 90, 130), (x, (y + now * s // 40) % H), s)
-
-        if phase == "stats" and left is None:
-            draw_stats_screen(selected_ship, now)
-            window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
-            pygame.display.flip()
-            clock.tick(FPS)
-            online_tick()
-            await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
-            continue
 
         if left is None:  # 카운트다운 중에는 게임 이름과 최고 점수 칸을 지운다
             t = title_font.render(GAME_TITLE, True, (120, 210, 255))
@@ -1556,7 +1529,7 @@ async def title_screen():
         mouse = pygame.mouse.get_pos()
         mouse = (mouse[0] / scale, mouse[1] / scale)
         for i in range(3):  # 마우스를 올린 전투기는 서서히 커지고 능력치가 나타난다
-            target = 1.0 if (left is None and phase == "choose" and slot_rects[i].collidepoint(mouse)) else 0.0
+            target = 1.0 if (left is None and slot_rects[i].collidepoint(mouse)) else 0.0
             hover[i] += (target - hover[i]) * 0.25
             if abs(target - hover[i]) < 0.01:
                 hover[i] = target
@@ -1570,8 +1543,8 @@ async def title_screen():
             cx = slot_x[i] + (W / 2 - slot_x[i]) * e if chosen else slot_x[i]  # 고른 비행기는 시작 위치로 이동
             cy = (row_y + bob * (1 - e)) * (1 - e) + (H - 80) * e if chosen else row_y
             if chosen:
-                if left is None:  # 선택 표시 테두리
-                    pygame.draw.rect(screen, (255, 220, 70), slot_rects[i], 3, border_radius=12)
+                if left is None:  # 선택 표시 테두리 (확인되면 초록색)
+                    pygame.draw.rect(screen, (90, 235, 130) if confirmed else (255, 220, 70), slot_rects[i], 3, border_radius=12)
                 k = (TITLE_SPRITE_SIZE + (PLAYER_SPRITE_SIZE - TITLE_SPRITE_SIZE) * e) / TITLE_SPRITE_SIZE
             else:
                 k = 0.8  # 고르지 않은 비행기는 조금 작고 흐리게 (마우스를 올리면 또렷해진다)
@@ -1599,9 +1572,23 @@ async def title_screen():
             screen.blit(hud, (0, 0))
 
         if left is None:
-            if (now // 500) % 2 == 0:  # 깜빡이는 문구
-                t = big.render("Press To Start", True, (230, 230, 240))
-                screen.blit(t, t.get_rect(center=(W / 2, H - 135)))
+            if confirmed:  # 확인 표시: 고른 비행기 위에 "Confirmed"
+                pygame.draw.rect(screen, (22, 70, 44), badge, border_radius=8)
+                pygame.draw.rect(screen, (90, 235, 130), badge, 2, border_radius=8)
+                t = font.render("Confirmed", True, (210, 255, 225))
+                screen.blit(t, t.get_rect(center=badge.center))
+                if start_with_s:  # 숨겨진 기능이 켜졌다는 표시: 오른쪽에 무지개 폭탄 아이콘
+                    draw_bomb_icon((badge.right + 18, badge.centery), rainbow=True, r=11)
+            # 아래 바: 확인되면 "Tap To Start" 버튼, 아직이면 안내
+            bar_hover = confirmed and PRESS_BAR.collidepoint(mouse)
+            pygame.draw.rect(screen, ((44, 54, 104) if bar_hover else (24, 28, 56)) if confirmed else (18, 20, 40), PRESS_BAR, border_radius=10)
+            if confirmed:
+                if (now // 500) % 2 == 0:  # 깜빡이는 문구
+                    t = press_font.render("Tap To Start", True, (230, 230, 240))
+                    screen.blit(t, t.get_rect(center=PRESS_BAR.center))
+            else:
+                t = font.render("Tap Your Fighter Twice", True, (125, 130, 165))
+                screen.blit(t, t.get_rect(center=PRESS_BAR.center))
         else:
             t = big.render(str(int(left) + 1), True, (255, 220, 70))
             screen.blit(t, t.get_rect(center=(W / 2, 200)))
@@ -1619,7 +1606,7 @@ async def title_screen():
 async def main():
     global start_with_s
     player = Player()
-    if start_with_s:  # 능력치 화면의 숨겨진 기능: 시작하자마자 S 1개 (한 번만)
+    if start_with_s:  # 전투기 고르기의 숨겨진 기능: 시작하자마자 S 1개 (한 번만)
         player.has_s = True
         start_with_s = False
     bullets, enemy_bullets, enemies, particles, items = [], [], [], [], []

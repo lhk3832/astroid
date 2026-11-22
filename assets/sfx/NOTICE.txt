@@ -1,6 +1,6 @@
-shoot_*, bomb_*, hit_* 는 Kenney의 "Sci-Fi Sounds"(1.0)에서 잘라 만든 소리입니다.
+shoot_*, bomb_*, hit_*, hurt_* 는 모두 Kenney의 "Sci-Fi Sounds"(1.0)에서 잘라 만든 소리입니다.
   Created/distributed by Kenney (www.kenney.nl)
   License: Creative Commons Zero (CC0) http://creativecommons.org/publicdomain/zero/1.0/
   출처: https://opengameart.org/content/sci-fi-sounds
-  원본: thrusterFire_000/004, explosionCrunch_000/001/002 (import_sfx.py가 자르고 페이드를 넣음)
-hurt_* 는 make_sfx.py가 합성한 소리입니다.
+  원본: thrusterFire_000/004, explosionCrunch_000/001/002, impactMetal_000/003, lowFrequency_explosion_001
+  (import_sfx.py가 자르고 페이드를 넣고 섞음)

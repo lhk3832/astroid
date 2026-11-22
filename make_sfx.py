@@ -1,7 +1,7 @@
 """효과음 만들기: python make_sfx.py [이름...]  ->  assets/sfx/*.ogg  (pip install soundfile numpy 가 필요하다)
 녹음 파일이 아니라 직접 합성한다: 잡음 + 낮은 쿵 소리 + 필터 + 잔향(울림) + 살짝 찌그러뜨리기(포화)로 실제 총소리/폭발음에 가깝게 만든다.
 소리마다 a, b 두 가지를 만든다. 마음에 드는 쪽은 shooter.py 위쪽 SFX_CHOICE에서 고른다.
-예: python make_sfx.py hurt  -> hurt_*만 새로 저장한다 (아무것도 안 적으면 합성 소리인 hurt만 만든다. shoot/bomb/hit는 녹음 파일을 쓰고 있어서 이름을 적어야만 합성본으로 다시 만든다). 웹 빌드(pygbag)가 WAV를 받지 않고 OGG만 받아서 OGG로 저장한다."""
+예: python make_sfx.py hurt  -> hurt_*만 새로 저장한다 (아무것도 안 적으면 아무것도 만들지 않는다. shoot/bomb/hit/hurt는 모두 녹음 파일을 쓰고 있어서 이름을 적어야만 합성본으로 다시 만든다). 웹 빌드(pygbag)가 WAV를 받지 않고 OGG만 받아서 OGG로 저장한다."""
 import math
 import os
 import random
@@ -11,7 +11,7 @@ SR = 44100  # 샘플 속도
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "sfx")
 random.seed(7)  # 만들 때마다 같은 소리가 나오게
 ONLY = sys.argv[1:]
-REAL = ("shoot", "bomb", "hit")  # 이 소리들은 지금 녹음 파일(import_sfx.py)을 쓴다: 합성본이 덮어쓰지 않게, 이름을 직접 적어야만 다시 만든다
+REAL = ("shoot", "bomb", "hit", "hurt")  # 이 소리들은 지금 녹음 파일(import_sfx.py)을 쓴다: 합성본이 덮어쓰지 않게, 이름을 직접 적어야만 다시 만든다
 
 
 # ── 기본 재료 ────────────────────────────────────────────

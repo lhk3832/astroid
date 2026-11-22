@@ -3,8 +3,9 @@ Kenney의 "Sci-Fi Sounds"(CC0, https://opengameart.org/content/sci-fi-sounds)에
   shoot(미사일이 날아가는 소리) <- thrusterFire (로켓 분사음의 일부를 "슝" 하고 지나가게)
   bomb (폭탄 터지는 소리)      <- explosionCrunch_000 / _001
   hit  (적을 맞혔을 때)        <- explosionCrunch_000 / _002 의 앞부분
+  hurt (내가 총알에 맞았을 때)  <- impactMetal_000 / _003 (금속에 부딪히는 소리) + 낮은 폭발음 lowFrequency_explosion_001
 원본 파일은 저장소에 넣지 않고(받은 zip은 5.9MB), 잘라 낸 결과(.ogg)만 assets/sfx/에 둔다. (pip install soundfile numpy 필요)
-hurt(내가 맞았을 때)는 make_sfx.py가 합성한다."""
+(make_sfx.py의 합성 hurt는 이제 쓰지 않는다.)"""
 import math
 import os
 import sys
@@ -73,3 +74,14 @@ d, sr = load("thrusterFire_004")
 save("shoot_a", whoosh(cut(d, sr, 1.0, 0.45), sr, 0.06, 0.3), sr)
 d, sr = load("thrusterFire_000")
 save("shoot_b", whoosh(cut(d, sr, 1.0, 0.4), sr, 0.05, 0.25), sr)
+
+# 내가 총알에 맞았을 때: 비행기 몸체가 얻어맞는 금속 충격음. a = 금속 충격 + 낮은 폭발음을 깔아서 묵직하게 (0.7초), b = 금속 충격 그대로 (0.78초)
+d, sr = load("impactMetal_000")
+metal = cut(d, sr, 0.0, 0.7)
+low, _ = load("lowFrequency_explosion_001")
+low = cut(low, sr, 0.0, 0.7)
+low = low[:len(metal)] if len(low) >= len(metal) else np.pad(low, (0, len(metal) - len(low)))
+mixed = metal / (np.max(np.abs(metal)) or 1.0) + 0.6 * low / (np.max(np.abs(low)) or 1.0)
+save("hurt_a", fades(mixed, sr, 0.0, 0.2), sr)
+d, sr = load("impactMetal_003")
+save("hurt_b", fades(d, sr, 0.0, 0.1), sr)
