@@ -141,18 +141,24 @@ screen = pygame.Surface((W, H))
 pygame.display.set_caption(GAME_TITLE)
 clock = pygame.time.Clock()
 def make_font(size, bold=False):
-    """데스크톱은 맑은 고딕, 웹(브라우저)은 pygame 기본 글꼴."""
+    """데스크톱은 맑은 고딕. 웹(브라우저)에는 없어서 assets/fonts의 Noto Sans KR(한글 2350자 + 영문)을 쓴다.
+    그것도 없으면 pygame 기본 글꼴."""
     if WEB:
-        f = pygame.font.Font(None, round(size * 1.3))
-        f.set_bold(bold)
-        return f
+        path = os.path.join(BASE_DIR, "assets", "fonts", "NotoSansKR-" + ("Bold" if bold else "Regular") + ".ttf")
+        try:
+            return pygame.font.Font(path, size)
+        except (pygame.error, FileNotFoundError, OSError):
+            f = pygame.font.Font(None, round(size * 1.3))
+            f.set_bold(bold)
+            return f
     return pygame.font.SysFont("malgungothic", size, bold=bold)
 
 
 font = make_font(24)
-ELLIPSIS = "..." if WEB else "…"  # 웹 기본 글꼴에는 …, ←, →, ♥ 글자가 없어서 대신 쓴다
-ARROW_L = "<" if WEB else "←"
-ARROW_R = ">" if WEB else "→"
+GLYPHS_OK = all(m is not None for m in font.metrics("♥←→…"))  # 이 글꼴에 ♥ ← → … 글자가 있나 (기본 글꼴에는 없다)
+ELLIPSIS = "…" if GLYPHS_OK else "..."
+ARROW_L = "←" if GLYPHS_OK else "<"
+ARROW_R = "→" if GLYPHS_OK else ">"
 big = make_font(56, True)
 title_font = make_font(84, True)
 small_font = make_font(18)
@@ -399,8 +405,8 @@ def draw_change_icon(center, r=10, surf=None, color=(190, 225, 255)):
 
 
 def render_hearts(fnt, text, color):
-    """글자 ♥가 들어간 문구를 그린다. 웹 기본 글꼴에는 ♥가 없어서 모양을 직접 그려 넣는다."""
-    if not WEB or "♥" not in text:
+    """글자 ♥가 들어간 문구를 그린다. 글꼴에 ♥가 없으면(웹 기본 글꼴) 모양을 직접 그려 넣는다."""
+    if GLYPHS_OK or "♥" not in text:
         return fnt.render(text, True, color)
     h = fnt.get_height()
     rest = text.replace("♥", "", 1).strip()

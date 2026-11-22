@@ -1,0 +1,6 @@
+Noto Sans KR (NotoSansKR-Regular.ttf, NotoSansKR-Bold.ttf)
+Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'.
+Noto is a trademark of Google LLC.
+These files are subsets of the Noto Sans KR font (Latin and 2,350 common Hangul syllables).
+Licensed under the SIL Open Font License, Version 1.1: https://openfontlicense.org
+The font files are NOT covered by the project's "All rights reserved" notice.

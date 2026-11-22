@@ -4,3 +4,6 @@ This project (source code, images, and other files in this repository) is
 provided for viewing and playing only. No permission is granted to copy,
 modify, merge, publish, distribute, sublicense, or sell any part of it
 without the prior written permission of the copyright holder.
+
+Exception: the font files in assets/fonts are Noto Sans KR, licensed under the
+SIL Open Font License 1.1 (see assets/fonts/NOTICE.txt).
