@@ -363,12 +363,27 @@ def save_best(score, level=0, seconds=0):
         pass  # 저장하지 못해도 게임은 계속한다
 
 
+PLAYER_MASKS = [pygame.mask.from_surface(sp, 60) if sp else None for sp in PLAYER_SPRITES]  # 내 비행기 그림의 모양(투명한 곳은 빼고)
+_bullet_surf = pygame.Surface((ENEMY_BULLET_RADIUS * 2, ENEMY_BULLET_RADIUS * 2), pygame.SRCALPHA)
+pygame.draw.circle(_bullet_surf, (255, 255, 255, 255), (ENEMY_BULLET_RADIUS, ENEMY_BULLET_RADIUS), ENEMY_BULLET_RADIUS)
+ENEMY_BULLET_MASK = pygame.mask.from_surface(_bullet_surf)  # 적 총알(원)의 모양
+
+
 def enemy_bullet_hits_player(eb, player):
-    """적 총알 eb가 내 비행기 그림(직사각형 범위)에 닿았는가. 빠른 총알이 한 프레임에 건너뛰지 않게 이번 프레임에 지나온 길을 따라 여러 점을 본다."""
+    """적 총알 eb가 내 비행기 그림에 닿았는가. 화면에 보이는 그림 모양 그대로(날개, 꼬리까지) 겹치면 맞는다.
+    빠른 총알이 한 프레임에 건너뛰지 않게 이번 프레임에 지나온 길을 따라 여러 점을 본다. 그림이 없으면 직사각형으로 본다."""
+    mask = PLAYER_MASKS[selected_ship]
+    r = ENEMY_BULLET_RADIUS
+    if mask is None:
+        for k in range(4):
+            pos = eb[0] - eb[1] * (k / 3)
+            if abs(pos.x - player.pos.x) < PLAYER_HIT_W + r and abs(pos.y - player.pos.y) < PLAYER_HIT_H + r:
+                return True
+        return False
+    left, top = PLAYER_SPRITES[selected_ship].get_rect(center=player.pos).topleft  # 그림이 그려지는 자리
     for k in range(4):
         pos = eb[0] - eb[1] * (k / 3)
-        if (abs(pos.x - player.pos.x) < PLAYER_HIT_W + ENEMY_BULLET_RADIUS
-                and abs(pos.y - player.pos.y) < PLAYER_HIT_H + ENEMY_BULLET_RADIUS):
+        if mask.overlap(ENEMY_BULLET_MASK, (int(pos.x - r - left), int(pos.y - r - top))):
             return True
     return False
 
@@ -1851,6 +1866,11 @@ async def main():
             level = 1 + int(score - bonus_total) // 150
 
             # 피격 처리
+            if player.invuln:  # 무적(피격 직후, Shield)일 때도 총알은 비행기를 통과하지 않는다: 닿으면 피해 없이 사라진다
+                blocked = [eb for eb in enemy_bullets if enemy_bullet_hits_player(eb, player)]
+                for eb in blocked:
+                    add_fx(fx, eb[0], 10, 8)  # 막힌 자리에 작은 불꽃
+                enemy_bullets = [eb for eb in enemy_bullets if eb not in blocked]
             if not player.invuln:
                 # 총알/폭탄에 맞거나 적 비행기와 부딪히면 체력이 깎인다. 부딪힌 적도 함께 피해를 입는다
                 hit_b = [eb for eb in enemy_bullets if enemy_bullet_hits_player(eb, player)]
