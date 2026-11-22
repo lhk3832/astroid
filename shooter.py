@@ -133,6 +133,10 @@ ITEM_COLORS = {  # (채움색, 테두리색)
 }
 
 pygame.init()
+try:
+    pygame.mixer.set_num_channels(16)  # 기본 8개는 폭발이 겹치면 모자란다
+except Exception:
+    pass
 # 게임은 W x H 캔버스에 그리고, 창에는 WINDOW_SCALE배로 확대해서 보여준다.
 # 화면이 작아서 안 들어가면 바탕화면 높이의 90%에 맞춰 줄인다.
 if WEB:
@@ -230,6 +234,19 @@ def bgm_tick(game_over, paused):
     if _bgm_gain != target:
         _bgm_gain = target
         bgm_apply()
+
+
+_last_boom = [0]
+
+
+def play_explosion():
+    """폭발 소리(폭탄 소리와 같은 `bomb`): 내가 터뜨린 폭탄, 초록 적의 폭탄, 적 비행기가 터질 때.
+    폭탄에 여러 대가 한꺼번에 터져도 시끄럽게 겹치지 않도록 0.12초에 한 번만 낸다."""
+    now = pygame.time.get_ticks()
+    if now - _last_boom[0] < 120:
+        return
+    _last_boom[0] = now
+    play_sfx("bomb")
 
 
 def play_sfx(name):
@@ -560,7 +577,8 @@ def add_fx(fx, pos, radius, life, kind="fire"):
 
 
 def explode_enemy(en, particles, fx):
-    """적 전투기가 쓰러질 때의 큰 폭발: 불꽃 + 사방으로 튀는 파편."""
+    """적 전투기가 쓰러질 때의 큰 폭발: 불꽃 + 사방으로 튀는 파편 + 폭탄과 같은 폭발 소리."""
+    play_explosion()
     add_fx(fx, en.pos, 46, 26, "boom" if EXPLOSION_SPRITE else "fire")
     for _ in range(18):
         a = random.uniform(0, math.tau)
@@ -1421,7 +1439,6 @@ async def splash_screen():
     최고 점수 칸을 누르면 모드별 최고 기록 화면이 열린다. 왼쪽 위의 Back 버튼(또는 Esc)을 누르면 "back"을 돌려줘서 이름 화면으로 돌아간다.
     오른쪽 위의 Tutorial 버튼을 누르면 "tutorial"을 돌려줘서 조작법 3쪽을 보여 준다 (그냥 시작하면 조작법을 건너뛴다)."""
     global game_mode
-    bgm_play()  # 이름 화면에서 클릭한 뒤라서 브라우저에서도 소리를 낼 수 있다
     stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
     names = list(MODES)
     while True:
@@ -1666,7 +1683,7 @@ async def title_screen():
 
 async def main():
     global start_with_s
-    bgm_play()  # 게임 오버 뒤 다시 시작하면 멈췄던 음악을 다시 튼다
+    bgm_play()  # 게임이 시작될 때부터 음악 (게임 오버 뒤 다시 시작해도 멈췄던 음악을 다시 튼다)
     player = Player()
     if start_with_s:  # 전투기 고르기의 숨겨진 기능: 시작하자마자 S 1개 (한 번만)
         player.has_s = True
@@ -1721,10 +1738,12 @@ async def main():
             if paused and e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                 if PAUSE_HOME.collidepoint(e.pos[0] / scale, e.pos[1] / scale):
                     save_run()  # 홈으로 나가도 그때까지의 점수는 기록에 반영
+                    bgm_stop()  # 메뉴에서는 음악이 없다
                     return "home"
             if game_over and e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:  # 게임 오버 화면의 홈 버튼
                 if GAMEOVER_HOME.collidepoint(e.pos[0] / scale, e.pos[1] / scale):
                     save_run()  # 게임 오버 때 이미 저장됐으면 다시 저장하지 않는다
+                    bgm_stop()
                     return "home"
             if shop and confirm_idx is not None:  # 구매 확인 화면: Buy면 구매, Back이면 상점으로
                 if e.type == pygame.KEYDOWN:
@@ -1934,7 +1953,7 @@ async def main():
                     s_charging = False
             if blast_radius:
                 explosions.append([player.pos.copy(), 30, blast_radius, 30, True])  # 마지막 True: 내가 터뜨린 폭발
-                play_sfx("bomb")
+                play_explosion()
                 for en in enemies:
                     if en.pos.distance_to(player.pos) < blast_radius + en.radius:  # 폭탄에 닿은 적은 바로 사라지고, 총알로 잡은 것처럼 아이템도 떨어뜨린다
                         en.hp = 0
@@ -1979,7 +1998,7 @@ async def main():
                 bm[2] -= 1
                 if bm[2] <= 0:
                     explosions.append([bm[0].copy(), 15, BOMB_RADIUS, 15])
-                    play_sfx("bomb")
+                    play_explosion()
                     if bm[0].distance_to(player.pos) < BOMB_RADIUS + player.radius:
                         bomb_hit = True
             bombs = [bm for bm in bombs if bm[2] > 0]
@@ -1989,6 +2008,7 @@ async def main():
 
             # 플레이어 총알 vs 적
             hit_sound = False
+            killed_now = False
             for en in enemies:
                 for b in bullets:
                     if bullet_hits(en, b):
@@ -2000,8 +2020,9 @@ async def main():
                             score += kill_points(en)
                             drop_items(en, player, enemy_count, items)
                             explode_enemy(en, particles, fx)  # 쓰러지면 전투기가 크게 폭발
+                            killed_now = True
                         break
-            if hit_sound:
+            if hit_sound and not killed_now:  # 쓰러뜨린 탄은 폭발 소리가 대신 난다
                 play_sfx("hit")
             enemies = [en for en in enemies if en.hp > 0 and en.pos.y < H + 30]
             level = 1 + int(score - bonus_total) // 150
