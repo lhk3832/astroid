@@ -54,7 +54,6 @@ S_WITH_B_FACTOR = 0.25    # B를 가지고 있을 때 S 드롭 확률에 곱하�
 BLAST_RADIUS = 600  # S 폭발 반경 (B의 4배, 화면 대부분을 덮는다)
 SP_NEED_B = 3  # 무지개 S 기술에 필요한 B 개수 (S도 1개 필요)
 SP_HOLD_FRAMES = FPS  # 무지개 S 기술은 오른쪽 버튼을 이만큼(1초) 꾹 눌러야 발동한다 (S 0.5초보다 길다)
-SP_POPUP_FRAMES = 110  # 발동하면 화면 가운데에 큰 무지개 S가 보이는 시간(프레임)
 R_BONUS_COUNT = 3     # 체력이 꽉 찬 상태로 R을 이만큼 먹으면
 R_BONUS_POINTS = 100  # 이만큼 보너스 점수 (적이 늘어나는 난이도에는 반영하지 않는다)
 P_BONUS_COUNT = 3     # 미사일이 최대인 상태로 P를 이만큼 먹으면
@@ -177,7 +176,6 @@ title_font = make_font(84, True)
 small_font = make_font(18)
 mid_font = make_font(30, True)
 press_font = make_font(46, True)  # 첫 화면의 Press To Start 바 안 글씨
-special_font = make_font(190, True)  # 무지개 S 기술을 쓸 때 화면 가운데에 크게 보이는 글자
 
 # 효과음: assets/sfx/{이름}_{a 또는 b}.ogg. 소리마다 두 가지를 만들어 뒀고 아래에서 마음에 드는 쪽을 고른다 (make_sfx.py로 다시 만들 수 있다).
 SFX_CHOICE = {"shoot": "a", "bomb": "a", "hit": "a", "hurt": "a", "gameover": "a"}  # shoot 총알 쏠 때 / bomb 폭탄 터질 때 / hit 내가 적을 맞혔을 때 / hurt 내가 맞았을 때 / gameover 게임 오버
@@ -750,16 +748,18 @@ def rainbow_text(fnt, text, phase=0.0):
 
 
 def special_plan():
-    """무지개 S 기술(B 3개 + S 1개): 지도 곳곳에서 B 폭발 3번이 시간차로 터지고, 마지막에 S 폭발이 터진다.
-    [(늦게 시작하는 프레임, 자리, 폭발 반경)]. B는 지도를 세로 세 구역으로 나눠 구역마다 하나씩 흩어서 터뜨린다."""
+    """무지개 S 기술(B 3개 + S 1개): 지도 곳곳에서 B 폭발 12번이 연달아 터지고, 중간에 S 폭발이 한 번, 마지막에 가장 큰 S 폭발이 터진다.
+    [(늦게 시작하는 프레임, 자리, 폭발 반경, detonate 설정, 마지막인가)].
+    B는 지도를 가로 4칸 x 세로 3칸 격자로 나눠 칸마다 하나씩 흩어서 터뜨린다 (순서는 무작위, 5프레임 간격으로 약 1초 동안)."""
     plan = []
-    bands = [0, 1, 2]
-    random.shuffle(bands)
-    for k, band in enumerate(bands):
-        x = random.uniform(W * (0.06 + 0.3 * band), W * (0.06 + 0.3 * band + 0.24))
-        y = random.uniform(110, H - 90)
-        plan.append((k * 14, pygame.Vector2(x, y), B_RADIUS))
-    plan.append((54, pygame.Vector2(random.uniform(W * 0.3, W * 0.7), random.uniform(H * 0.25, H * 0.6)), BLAST_RADIUS))
+    cells = [(cx, cy) for cx in range(4) for cy in range(3)]
+    random.shuffle(cells)
+    for k, (cx, cy) in enumerate(cells):
+        x = random.uniform(W / 4 * cx + 30, W / 4 * (cx + 1) - 30)
+        y = random.uniform(90 + (H - 150) / 3 * cy + 20, 90 + (H - 150) / 3 * (cy + 1) - 20)
+        plan.append((k * 5, pygame.Vector2(x, y), B_RADIUS, dict(life=30, shake=3), False))
+    plan.append((38, pygame.Vector2(random.uniform(W * 0.3, W * 0.7), random.uniform(H * 0.25, H * 0.55)), BLAST_RADIUS, dict(life=40, shake=9), False))
+    plan.append((84, pygame.Vector2(W / 2, H / 2 - 20), BLAST_RADIUS, dict(life=56, shake=16, grand=True), True))  # 마지막: 가장 크고 길게
     return plan
 
 
@@ -770,17 +770,20 @@ def draw_player_blast(ex):
     pos, left, r, total = ex[0], ex[1], ex[2], ex[3]
     p = 1 - left / total  # 0 → 1 (시간이 흐른 정도)
     big = r > 200
+    grand = total > 45  # 무지개 S 기술의 마지막 폭발: 더 길고 장엄하게
     ease = 1 - (1 - p) ** 3  # 처음에 빠르게 커진다
     layer = pygame.Surface((W, H), pygame.SRCALPHA)
     ring_r = r * (0.6 + 0.6 * ease)
     pygame.draw.circle(layer, (255, 220, 120, int(190 * (1 - p))), pos, ring_r, 6 if big else 3)  # 퍼지는 고리 (범위 표시)
     if big:
-        for k in range(4):  # 무지개 고리: 하나씩 시간차를 두고 퍼진다
-            q = max(0.0, min(1.0, p * 1.5 - k * 0.12))
+        rings = 8 if grand else 4
+        for k in range(rings):  # 무지개 고리: 하나씩 시간차를 두고 퍼진다 (마지막 폭발은 지도 끝까지 퍼지는 충격파)
+            q = max(0.0, min(1.0, p * (1.9 if grand else 1.5) - k * (0.1 if grand else 0.12)))
             if 0 < q < 1:
-                pygame.draw.circle(layer, rainbow(k / 4 + p * 0.5, int(210 * (1 - q))), pos, r * (0.2 + 0.95 * q), 5)
-        if p < 0.3:  # 화면이 번쩍
-            layer.fill((255, 255, 235, int(170 * (1 - p / 0.3))), special_flags=pygame.BLEND_RGBA_MAX)
+                pygame.draw.circle(layer, rainbow(k / rings + p * 0.5, int(220 * (1 - q))), pos, r * (0.2 + (1.45 if grand else 0.95) * q), 9 if grand else 5)
+        flash_end = 0.34 if grand else 0.3
+        if p < flash_end:  # 화면이 번쩍
+            layer.fill((255, 255, 235, int((235 if grand else 170) * (1 - p / flash_end))), special_flags=pygame.BLEND_RGBA_MAX)
     elif p < 0.2:  # B도 첫 순간에 작게 번쩍
         pygame.draw.circle(layer, (255, 255, 230, int(200 * (1 - p / 0.2))), pos, r * 0.45)
     screen.blit(layer, (0, 0))
@@ -793,12 +796,14 @@ def draw_player_blast(ex):
             q = (p * total - delay) / 14
             if 0 <= q <= 1:
                 blast_sprite((pos[0] + off[0], pos[1] + off[1]), 2 * r * 0.4 * k * (0.5 + 0.7 * q), int(255 * (1 - q * q)))
-        for i in range(30):  # 불꽃: 가운데에서 사방으로 뻗는다
+        for i in range(70 if grand else 30):  # 불꽃: 가운데에서 사방으로 뻗는다
             ang = i * 2.399963  # 황금각: 골고루 퍼진다
-            d0, d1 = r * (0.1 + 0.9 * ease * (0.6 + 0.4 * ((i * 7) % 5) / 4)), r * (0.1 + 0.9 * ease * (0.6 + 0.4 * ((i * 7) % 5) / 4)) * 1.12
+            ex_n = 70 if grand else 30
+            d0 = r * (0.1 + (1.3 if grand else 0.9) * ease * (0.6 + 0.4 * ((i * 7) % 5) / 4))
+            d1 = d0 * 1.12
             a1 = (pos[0] + math.cos(ang) * d0, pos[1] + math.sin(ang) * d0)
             a2 = (pos[0] + math.cos(ang) * d1, pos[1] + math.sin(ang) * d1)
-            pygame.draw.line(screen, rainbow(i / 30 + p)[:3], a1, a2, 3)
+            pygame.draw.line(screen, rainbow(i / (70 if grand else 30) + p)[:3], a1, a2, 4 if grand else 3)
 
 
 def draw_bomb_icon(center, rainbow=False, r=11, surf=None):
@@ -1559,7 +1564,7 @@ CONTROL_PAGES = [
         ("Red", "Red enemies", "The basic ones. They often drop R (heal)"),
         ("Green", "Green enemies", "They throw bombs, so keep away from the blast"),
         ("Yellow", "Yellow enemies", "Fast and tough, but they drop coins"),
-        ("S", "Rainbow S", "With 3 B and 1 S, hold Right Click 1s: bombs go off everywhere"),
+        ("S", "Rainbow S", "With 3 B and 1 S, hold Right Click 1s: a grand barrage of bombs"),
     ]),
 ]
 CONTROLS_NEXT = pygame.Rect(W // 2 - 130, 505, 260, 50)
@@ -1927,17 +1932,18 @@ async def main():
     sp_charging, sp_charge = False, 0  # 무지개 S 기술(B 3개 + S 1개)을 꾹 눌러 충전하는 중인가, 지금까지 누른 프레임
     special = None  # 발동한 무지개 S 기술: {"t": 지난 프레임, "plan": special_plan(), "fired": [...]}
 
-    def detonate(center, radius):
+    def detonate(center, radius, life=30, shake=0, grand=False):
         """내 폭탄 하나가 center에서 터진다: 폭발 그림과 소리, 범위 안 적은 바로 처치하고 (총알로 잡은 것처럼 점수와 아이템),
         적 총알은 폭발이 남아 있는 동안 폭발 범위에서 지워진다. 일반 B/S와 무지개 S 기술이 같이 쓴다."""
         nonlocal score, enemies
         center = pygame.Vector2(center)
         bursts = []  # S(큰 폭발)만: 사방에서 시간차로 터지는 작은 폭발 [(자리 차이, 늦게 시작하는 프레임, 크기 배율)]
         if radius > 200:
-            for _ in range(8):
-                ang, dist = random.uniform(0, math.tau), random.uniform(0.2, 0.85) * radius
-                bursts.append((pygame.Vector2(math.cos(ang), math.sin(ang)) * dist, random.randint(0, 14), random.uniform(0.55, 1.0)))
-        explosions.append([center, 30, radius, 30, True, bursts])  # 마지막 True: 내가 터뜨린 폭발
+            for _ in range(16 if grand else 8):
+                ang, dist = random.uniform(0, math.tau), random.uniform(0.2, 0.9) * radius
+                bursts.append((pygame.Vector2(math.cos(ang), math.sin(ang)) * dist, random.randint(0, 24 if grand else 14), random.uniform(0.55, 1.0)))
+        # [자리, 남은 프레임, 반경, 전체 프레임, True(내가 터뜨린 폭발), 작은 폭발들, 화면 흔들림 세기(px)]
+        explosions.append([center, life, radius, life, True, bursts, shake])
         play_explosion()
         for en in enemies:
             if en.pos.distance_to(center) < radius + en.radius:  # 폭탄에 닿은 적은 바로 사라지고, 총알로 잡은 것처럼 아이템도 떨어뜨린다
@@ -2190,7 +2196,8 @@ async def main():
                         sp_charging = False
                         player.b_count -= SP_NEED_B
                         player.has_s = False
-                        special = {"t": 0, "plan": special_plan(), "fired": [False] * 4}
+                        plan = special_plan()
+                        special = {"t": 0, "plan": plan, "fired": [False] * len(plan)}
                 else:
                     sp_charging = False
                     if player.b_count > 0:
@@ -2218,11 +2225,13 @@ async def main():
                 detonate(player.pos, blast_radius)
             if special:  # 무지개 S 기술: 계획대로 지도 곳곳에서 시간차로 터진다
                 special["t"] += 1
-                for k, (delay, pos, radius) in enumerate(special["plan"]):
+                for k, (delay, pos, radius, opts, finale) in enumerate(special["plan"]):
                     if not special["fired"][k] and special["t"] >= delay:
                         special["fired"][k] = True
-                        detonate(pos, radius)
-                if all(special["fired"]) and special["t"] > SP_POPUP_FRAMES:
+                        detonate(pos, radius, **opts)
+                        if finale:
+                            play_sfx("gameover")  # 마지막 폭발은 가장 강렬한 폭발음
+                if all(special["fired"]):
                     special = None
 
             for en in enemies:
@@ -2403,13 +2412,6 @@ async def main():
             t.set_alpha(min(255, bonus_flash * 8))
             screen.blit(t, t.get_rect(center=(W / 2, 150 - (90 - bonus_flash) * 0.3)))
 
-        if special and special["t"] < SP_POPUP_FRAMES:  # 무지개 S 기술을 쓰면 화면 가운데에 큰 무지개 S (기술 이름)
-            q = special["t"] / SP_POPUP_FRAMES
-            img = rainbow_text(special_font, "S", pygame.time.get_ticks() / 500)
-            k = 0.6 + 0.5 * min(1.0, q * 6) + 0.08 * math.sin(special["t"] * 0.3)  # 처음에 확 커진다
-            img = pygame.transform.rotozoom(img, 0, k)
-            img.set_alpha(int(255 * min(1.0, q * 12) * (1 - max(0.0, (q - 0.55) / 0.45))))
-            screen.blit(img, img.get_rect(center=(W // 2, H // 2 - 30)))
         if game_over:
             t = big.render("GAME OVER", True, (255, 90, 90))
             screen.blit(t, t.get_rect(center=(W / 2, H / 2 - 20)))
@@ -2478,7 +2480,16 @@ async def main():
             if confirm_idx is not None and confirm_idx < len(shop_offers):
                 draw_confirm_screen(shop_offers[confirm_idx], player, shop_msg)
 
-        window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
+        shake = 0.0  # 무지개 S 기술의 폭발이 터지는 동안 화면이 흔들린다 (폭발마다 세기가 점점 줄어든다)
+        for ex in explosions:
+            if len(ex) > 6 and ex[6]:
+                shake = max(shake, ex[6] * ex[1] / ex[3])
+        if shake > 0.5:
+            window.fill((0, 0, 0))
+            window.blit(pygame.transform.smoothscale(screen, window.get_size()),
+                        (int(random.uniform(-shake, shake) * scale), int(random.uniform(-shake, shake) * scale)))
+        else:
+            window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
         frame_hook()
