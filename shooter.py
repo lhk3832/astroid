@@ -123,6 +123,7 @@ BEST_BOX.center = (W // 2, H - 55)  # 타이틀의 최고 점수 칸
 STATS_BACK = pygame.Rect(W // 2 - 210, 500, 180, 50)    # 능력치 소개 화면의 Back 버튼
 STATS_SELECT = pygame.Rect(W // 2 + 30, 500, 180, 50)   # 능력치 소개 화면의 Select 버튼
 PAUSE_HOME = pygame.Rect(300, 390, 200, 50)  # 일시정지 화면의 "Go to Home" 버튼
+GAMEOVER_HOME = pygame.Rect(300, H // 2 + 65, 200, 50)  # 게임 오버 화면의 "Go to Home" 버튼
 RAINBOW = [(255, 60, 60), (255, 150, 40), (255, 230, 60), (80, 210, 90), (70, 140, 255), (170, 90, 230)]
 ITEM_COLORS = {  # (채움색, 테두리색)
     "B": ((255, 210, 120), (120, 70, 10)),
@@ -1633,6 +1634,10 @@ async def main():
                 if PAUSE_HOME.collidepoint(e.pos[0] / scale, e.pos[1] / scale):
                     save_run()  # 홈으로 나가도 그때까지의 점수는 기록에 반영
                     return "home"
+            if game_over and e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:  # 게임 오버 화면의 홈 버튼
+                if GAMEOVER_HOME.collidepoint(e.pos[0] / scale, e.pos[1] / scale):
+                    save_run()  # 게임 오버 때 이미 저장됐으면 다시 저장하지 않는다
+                    return "home"
             if shop and confirm_idx is not None:  # 구매 확인 화면: Buy면 구매, Back이면 상점으로
                 if e.type == pygame.KEYDOWN:
                     if e.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
@@ -2003,6 +2008,11 @@ async def main():
             screen.blit(t, t.get_rect(center=(W / 2, H / 2 - 20)))
             t = font.render("Press R to Restart", True, (230, 230, 240))
             screen.blit(t, t.get_rect(center=(W / 2, H / 2 + 30)))
+            hover = GAMEOVER_HOME.collidepoint(pygame.mouse.get_pos()[0] / scale, pygame.mouse.get_pos()[1] / scale)
+            pygame.draw.rect(screen, (70, 90, 150) if hover else (40, 50, 90), GAMEOVER_HOME, border_radius=10)
+            pygame.draw.rect(screen, (150, 190, 255), GAMEOVER_HOME, 2, border_radius=10)
+            t = font.render("Go to Home", True, (240, 245, 255))
+            screen.blit(t, t.get_rect(center=GAMEOVER_HOME.center))
 
         if paused:
             dim = pygame.Surface((W, H), pygame.SRCALPHA)
