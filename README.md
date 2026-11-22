@@ -170,3 +170,14 @@ grant usage, select on all sequences in schema public to anon;
   (이미 이름 길이 20으로 만들었다면: `alter table scores drop constraint scores_player_check; alter table scores add constraint scores_player_check check (char_length(player) between 1 and 10);`)
 - 한계: 코드가 브라우저에서 돌아서 마음먹으면 가짜 점수를 보낼 수 있다 (점수 1~1,000,000, 이름 10자로만 제한). 이름은 모두에게 공개된다. 점수를 고치거나 지우는 건 정책으로 막혀 있고, 지우려면 Supabase 화면에서 직접 한다.
 
+### 가짜 점수와 이상한 이름 막기 (`supabase_hardening.sql`)
+
+Supabase의 SQL Editor에서 `supabase_hardening.sql` 내용을 한 번 실행한다 (여러 번 해도 된다). 새로 들어오는 점수에만 적용되고 이미 있는 점수는 그대로다.
+
+- 이름: 앞뒤 공백 없이 영문, 숫자, 한글, 공백, `_ . -`만 10자까지. 그 밖의 글자는 게임이 보내기 전에 뺀다 (비면 Guest). 욕설/링크 같은 금칙어가 들어 있으면 서버가 거절하고, 그러면 게임이 이름만 Guest로 바꿔 한 번 더 보낸다 (점수는 남는다).
+- 점수 상한: 플레이 시간(1~86400초)이 있어야 하고 점수는 `플레이 시간 x 100 + 1000` 이하, 레벨은 1 이상 `점수 / 150 + 1` 이하, 전투기는 Normal/Tanker/Attack.
+- 속도 제한: 같은 접속자는 1분에 5번까지 (접속 주소는 섞어서 줄인 값 `ip_hash`만 저장).
+- 숨김: `scores` 표의 `hidden`을 true로 바꾸면 그 행이 순위표에서 빠진다 (Table Editor에서 직접).
+- 공개 키로는 `ip_hash`/`hidden` 칸을 읽거나 쓸 수 없다.
+- 한계: 시간과 점수를 맞춰서 보내는 사람은 막을 수 없다 (게임 규칙이 브라우저에서 돌기 때문). 눈에 띄는 가짜는 Table Editor에서 지우거나 숨긴다.
+

@@ -4,6 +4,7 @@ import json
 import math
 import os
 import random
+import re
 import sys
 
 import pygame
@@ -326,8 +327,18 @@ def online_post(score, level, seconds):
     """이번 판의 점수를 서버에 보낸다 (실패해도 게임은 계속한다)."""
     if not ONLINE:
         return
-    body = {"mode": game_mode, "score": int(score), "player": (player_name or "Guest")[:NAME_MAX],
+    # 서버가 받는 이름 글자는 영문, 숫자, 한글, 공백, _ . - 뿐이라 나머지는 뺀다 (비면 Guest)
+    name = re.sub(r"[^A-Za-z0-9가-힣 _.\-]", "", player_name or "").strip()[:NAME_MAX].strip() or "Guest"
+    body = {"mode": game_mode, "score": int(score), "player": name,
             "ship": SHIP_NAMES[selected_ship], "level": int(level), "play_time": int(seconds)}
+    _send_score(body)
+
+
+_last_body = [None, False]  # 마지막으로 보낸 점수, Guest로 다시 보내 봤는가
+
+
+def _send_score(body):
+    _last_body[0] = body
     try:
         _js("window.astroid_post_state = ''; window.astroid_post(%s)" % json.dumps(json.dumps(body)))
     except Exception:
@@ -343,9 +354,15 @@ def online_tick():
     if _online_frames % 20:
         return
     try:
-        if _js("window.astroid_post_state") == "ok":
+        state = _js("window.astroid_post_state")
+        if state == "ok":
             _js("window.astroid_post_state = ''")
+            _last_body[:] = [None, False]
             online_refresh()
+        elif state == "fail" and _last_body[0] and not _last_body[1]:
+            # 서버가 거절했다 (예: 이름이 금칙어): 점수는 남도록 이름만 Guest로 바꿔 한 번 더 보낸다
+            _last_body[1] = True
+            _send_score(dict(_last_body[0], player="Guest"))
         if _online_frames % (FPS * 30) == 0:
             online_refresh()
         for mode in MODES:
