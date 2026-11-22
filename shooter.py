@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import json
 import math
@@ -8,6 +9,7 @@ import sys
 import pygame
 
 W, H = 800, 600
+WEB = sys.platform == "emscripten"  # 브라우저(pygbag)에서 도는 중인가
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BEST_FILE = os.path.join(BASE_DIR, "best_score.txt")  # 최고 점수 저장 파일
 ENEMY_SPRITE_SIZE = 44  # 적 이미지의 크기(px)
@@ -129,18 +131,33 @@ ITEM_COLORS = {  # (채움색, 테두리색)
 pygame.init()
 # 게임은 W x H 캔버스에 그리고, 창에는 WINDOW_SCALE배로 확대해서 보여준다.
 # 화면이 작아서 안 들어가면 바탕화면 높이의 90%에 맞춰 줄인다.
-desktop_h = pygame.display.get_desktop_sizes()[0][1]
-scale = min(WINDOW_SCALE, desktop_h * 0.9 / H)
+if WEB:
+    scale = 1.0
+else:
+    desktop_h = pygame.display.get_desktop_sizes()[0][1]
+    scale = min(WINDOW_SCALE, desktop_h * 0.9 / H)
 window = pygame.display.set_mode((int(W * scale), int(H * scale)))
 screen = pygame.Surface((W, H))
 pygame.display.set_caption(GAME_TITLE)
 clock = pygame.time.Clock()
-font = pygame.font.SysFont("malgungothic", 24)
-big = pygame.font.SysFont("malgungothic", 56, bold=True)
-title_font = pygame.font.SysFont("malgungothic", 84, bold=True)
-small_font = pygame.font.SysFont("malgungothic", 18)
-mid_font = pygame.font.SysFont("malgungothic", 30, bold=True)
-press_font = pygame.font.SysFont("malgungothic", 46, bold=True)  # 첫 화면의 Press To Start 바 안 글씨
+def make_font(size, bold=False):
+    """데스크톱은 맑은 고딕, 웹(브라우저)은 pygame 기본 글꼴."""
+    if WEB:
+        f = pygame.font.Font(None, round(size * 1.3))
+        f.set_bold(bold)
+        return f
+    return pygame.font.SysFont("malgungothic", size, bold=bold)
+
+
+font = make_font(24)
+ELLIPSIS = "..." if WEB else "…"  # 웹 기본 글꼴에는 …, ←, →, ♥ 글자가 없어서 대신 쓴다
+ARROW_L = "<" if WEB else "←"
+ARROW_R = ">" if WEB else "→"
+big = make_font(56, True)
+title_font = make_font(84, True)
+small_font = make_font(18)
+mid_font = make_font(30, True)
+press_font = make_font(46, True)  # 첫 화면의 Press To Start 바 안 글씨
 
 def load_sprite(filename, size, angle=0):
     """이미지를 가장 긴 변이 size(px)가 되게 불러온다. 파일이 없으면 None (도형으로 대신 그림)."""
@@ -381,12 +398,30 @@ def draw_change_icon(center, r=10, surf=None, color=(190, 225, 255)):
     pygame.draw.polygon(surf, color, [(ax + r * 0.55, ay + r * 0.15), (ax - r * 0.25, ay - r * 0.7), (ax - r * 0.35, ay + r * 0.45)])
 
 
+def render_hearts(fnt, text, color):
+    """글자 ♥가 들어간 문구를 그린다. 웹 기본 글꼴에는 ♥가 없어서 모양을 직접 그려 넣는다."""
+    if not WEB or "♥" not in text:
+        return fnt.render(text, True, color)
+    h = fnt.get_height()
+    rest = text.replace("♥", "", 1).strip()
+    tail = fnt.render(rest, True, color) if rest else None
+    out = pygame.Surface((h + (tail.get_width() + 6 if tail else 0), h), pygame.SRCALPHA)
+    r = h * 0.22
+    cx, cy = h / 2, h * 0.42
+    pygame.draw.circle(out, color, (cx - r, cy), r)
+    pygame.draw.circle(out, color, (cx + r, cy), r)
+    pygame.draw.polygon(out, color, [(cx - r * 1.95, cy + r * 0.3), (cx + r * 1.95, cy + r * 0.3), (cx, cy + r * 3.1)])
+    if tail:
+        out.blit(tail, (h + 6, 0))
+    return out
+
+
 def draw_hud(surf, score, level, player):
     """게임 화면의 점수/체력/코인/폭탄 표시. 타이틀에서 게임 화면으로 넘어갈 때도 같은 걸 쓴다."""
     surf.blit(font.render(f"Score {fmt_score(score)}   Level {level}   Missiles {player.power}", True, (230, 230, 240)), (12, 10))
     x = W - 12  # 하트는 오른쪽 끝에서부터 그린다. 최대 하트까지 칸을 보여주고, 잃은 칸은 어둡게 둔다
     for i in range(player.max_hp - 1, -1, -1):
-        heart = font.render("♥", True, (255, 100, 120) if i < player.hp else (70, 50, 75))
+        heart = render_hearts(font, "♥", (255, 100, 120) if i < player.hp else (70, 50, 75))
         x -= heart.get_width() + 4
         surf.blit(heart, (x, 10))
     draw_coin_icon((W - 138, 54), surf=surf)
@@ -553,7 +588,7 @@ def draw_shop_icon(kind, cx, cy):
         if heart:
             screen.blit(heart, heart.get_rect(center=(cx, cy)))
         else:
-            t = big.render("♥", True, (255, 100, 120))
+            t = render_hearts(big, "♥", (255, 100, 120))
             screen.blit(t, t.get_rect(center=(cx, cy)))
         if kind == "heal":
             t = font.render("+", True, (255, 255, 255))
@@ -655,7 +690,7 @@ def draw_confirm_screen(offer, player, msg):
     t = font.render(f"You have {player.coins}", True, (190, 195, 215))
     screen.blit(t, t.get_rect(midleft=(W / 2 - 30, 425)))
     if kind in ("heart", "heal"):
-        t = font.render(f"♥ {player.hp}/{player.max_hp}", True, (255, 130, 150))
+        t = render_hearts(font, f"♥ {player.hp}/{player.max_hp}", (255, 130, 150))
         screen.blit(t, t.get_rect(midleft=(W / 2 + 135, 425)))
     if msg:
         t = font.render(msg, True, (255, 170, 170))
@@ -741,16 +776,16 @@ def fit_text(fnt, text, max_w):
     """글자가 max_w(px)를 넘으면 끝을 잘라서 "…"을 붙인다."""
     if fnt.size(text)[0] <= max_w:
         return text
-    while text and fnt.size(text + "…")[0] > max_w:
+    while text and fnt.size(text + ELLIPSIS)[0] > max_w:
         text = text[:-1]
-    return text + "…"
+    return text + ELLIPSIS
 
 
 def format_time(seconds):
     return f"{seconds // 60}:{seconds % 60:02d}"
 
 
-def records_screen():
+async def records_screen():
     """모드별 최고 기록 화면: 점수, 전투기, 레벨, 플레이 시간, 날짜. 아무 키나 Back 버튼으로 닫는다."""
     stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
     cols = {"mode": 40, "score": 178, "player": 292, "ship": 402, "level": 477, "time": 542, "date": 668}  # 각 칸의 x (mode만 왼쪽 맞춤)
@@ -768,7 +803,7 @@ def records_screen():
                     return
                 for name, card in zip(MODES, cards):
                     if card.collidepoint(mouse):  # 모드 줄을 누르면 그 모드의 1~10위
-                        ranking_screen(name)
+                        await ranking_screen(name)
 
         now = pygame.time.get_ticks()
         screen.fill((10, 10, 30))
@@ -815,6 +850,7 @@ def records_screen():
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
+        await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
 
 
 MEDAL_SIZE = 42
@@ -886,7 +922,7 @@ def draw_medal(surf, center, i, now):
     surf.blit(t, t.get_rect(center=(cx, cy + 1)))
 
 
-def ranking_screen(mode):
+async def ranking_screen(mode):
     """한 모드의 1~10위 화면: 순위, 이름, 점수, 전투기, 레벨, 플레이 시간, 날짜. 아무 키나 Back 버튼으로 닫는다."""
     stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
     color = MODE_COLORS[mode]
@@ -953,9 +989,10 @@ def ranking_screen(mode):
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
+        await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
 
 
-def name_screen():
+async def name_screen():
     """게임을 켜면 가장 먼저 나오는 화면: 제목과 비행기, 그 아래에 "Player's name", 이름을 입력하는 칸, "Play In Guest Mode" 버튼.
     칸을 클릭하면 이름을 입력할 수 있고(Enter로 확인), 버튼을 누르면 이름 없이(Guest) 시작한다."""
     global player_name
@@ -1028,6 +1065,7 @@ def name_screen():
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
+        await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
 
 
 def draw_nav_back():
@@ -1036,7 +1074,7 @@ def draw_nav_back():
     hover = SPLASH_BACK.collidepoint(mx / scale, my / scale)
     pygame.draw.rect(screen, (60, 75, 125) if hover else (35, 42, 80), SPLASH_BACK, border_radius=8)
     pygame.draw.rect(screen, (150, 190, 255), SPLASH_BACK, 2, border_radius=8)
-    t = small_font.render("← Back", True, (230, 235, 250))
+    t = small_font.render(ARROW_L + " Back", True, (230, 235, 250))
     screen.blit(t, t.get_rect(center=SPLASH_BACK.center))
 
 
@@ -1066,7 +1104,7 @@ CONTROLS_SKIP = pygame.Rect(W - 104, 38, 92, 34)  # 오른쪽 위: 설명을 건
 CONTROL_START = [0]  # 조작법 화면을 처음 열 쪽 (전투기 고르기에서 Back으로 오면 마지막 쪽)
 
 
-def controls_screen(page=0):
+async def controls_screen(page=0):
     """전투기를 고르기 전의 조작법 설명 (3쪽). Next / Enter로 다음 쪽, Back / Esc로 이전 쪽.
     첫 쪽에서 Back이면 "back"(난이도 화면으로), 마지막 쪽에서 Next면 None(전투기 고르기로)을 돌려준다."""
     stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
@@ -1108,7 +1146,7 @@ def controls_screen(page=0):
         hover = CONTROLS_SKIP.collidepoint(mx / scale, my / scale)
         pygame.draw.rect(screen, (60, 75, 125) if hover else (35, 42, 80), CONTROLS_SKIP, border_radius=8)
         pygame.draw.rect(screen, (150, 190, 255), CONTROLS_SKIP, 2, border_radius=8)
-        t = small_font.render("Skip →", True, (230, 235, 250))
+        t = small_font.render("Skip " + ARROW_R, True, (230, 235, 250))
         screen.blit(t, t.get_rect(center=CONTROLS_SKIP.center))
         heading, rows = CONTROL_PAGES[page]
         t = big.render(heading, True, (120, 210, 255))
@@ -1145,9 +1183,10 @@ def controls_screen(page=0):
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
+        await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
 
 
-def splash_screen():
+async def splash_screen():
     """게임을 켜면 가장 먼저 나오는 화면: 제목, 큰 일반 비행기(1번), Easy/Normal/Hard 버튼, "Press To Start", 최고 점수.
     버튼(또는 ← →)으로 난이도를 고르고, 그 밖의 아무 키나 클릭을 하면 전투기 고르기 화면으로 간다.
     최고 점수 칸을 누르면 모드별 최고 기록 화면이 열린다. 왼쪽 위의 Back 버튼(또는 Esc)을 누르면 "back"을 돌려줘서 이름 화면으로 돌아간다."""
@@ -1176,7 +1215,7 @@ def splash_screen():
                 if clicked:  # 버튼을 누르면 그 난이도를 고른다
                     game_mode = clicked[0]
                 elif BEST_BOX.collidepoint(mouse):  # 최고 점수 칸을 누르면 기록 화면
-                    records_screen()
+                    await records_screen()
                 else:
                     return
 
@@ -1211,9 +1250,10 @@ def splash_screen():
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
+        await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
 
 
-def title_screen():
+async def title_screen():
     global selected_ship, start_with_s
     name_clicks = 0    # 능력치 화면에서 전투기 이름(Fighter N)을 클릭한 횟수
     stars = [(random.randint(0, W), random.randint(0, H), random.randint(1, 3)) for _ in range(60)]
@@ -1278,7 +1318,7 @@ def title_screen():
                 if clicked:  # 비행기를 클릭하면 선택, 빈 곳을 클릭하면 능력치 소개 화면으로
                     selected_ship = clicked[0]
                 elif BEST_BOX.collidepoint(mouse):  # 최고 점수 칸을 누르면 기록 화면
-                    records_screen()
+                    await records_screen()
                 else:
                     phase = "stats"
                     name_clicks = 0
@@ -1297,6 +1337,7 @@ def title_screen():
             window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
             pygame.display.flip()
             clock.tick(FPS)
+            await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
             continue
 
         if left is None:  # 카운트다운 중에는 게임 이름과 최고 점수 칸을 지운다
@@ -1366,9 +1407,10 @@ def title_screen():
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
+        await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
 
 
-def main():
+async def main():
     global start_with_s
     player = Player()
     if start_with_s:  # 능력치 화면의 숨겨진 기능: 시작하자마자 S 1개 (한 번만)
@@ -1815,7 +1857,7 @@ def main():
             screen.blit(t, t.get_rect(center=(W / 2, 90)))
             draw_coin_icon((W / 2 - 50, 150))
             screen.blit(font.render(f"{player.coins} Coins", True, (255, 240, 170)), (W / 2 - 30, 137))
-            screen.blit(font.render(f"♥ {player.hp}/{player.max_hp}", True, (255, 130, 150)), (W / 2 + 105, 137))  # 지금 하트(현재/최대)
+            screen.blit(render_hearts(font, f"♥ {player.hp}/{player.max_hp}", (255, 130, 150)), (W / 2 + 105, 137))  # 지금 하트(현재/최대)
             for i, ((name, price, kind), card) in enumerate(zip(shop_offers, SHOP_CARDS)):
                 blocked = not shop_available(kind, player)
                 affordable = player.coins >= price and not blocked
@@ -1849,29 +1891,34 @@ def main():
         window.blit(pygame.transform.smoothscale(screen, window.get_size()), (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
+        await asyncio.sleep(0)  # 웹에서 브라우저에 제어를 넘긴다
 
 
-def front_screens(skip_name=False):
+async def front_screens(skip_name=False):
     """이름 화면 → 난이도 화면 → 조작법(3쪽) → 전투기 고르기. 각 화면의 Back은 바로 앞 화면으로 돌아간다."""
     step = "splash" if skip_name else "name"
     while True:
         if step == "name":
-            name_screen()  # 가장 먼저: 이름 입력(또는 게스트)
+            await name_screen()  # 가장 먼저: 이름 입력(또는 게스트)
             step = "splash"
         elif step == "splash":
-            step = "name" if splash_screen() == "back" else "controls"
+            step = "name" if await splash_screen() == "back" else "controls"
         elif step == "controls":
-            step = "splash" if controls_screen(CONTROL_START[0]) == "back" else "title"
+            step = "splash" if await controls_screen(CONTROL_START[0]) == "back" else "title"
             CONTROL_START[0] = 0
         else:
-            if title_screen() == "back":
+            if await title_screen() == "back":
                 CONTROL_START[0] = len(CONTROL_PAGES) - 1  # 전투기 고르기에서 Back이면 조작법의 마지막 쪽으로
                 step = "controls"
             else:
                 return
 
 
-front_screens()
-while True:
-    if main() == "home":  # 일시정지 화면에서 홈으로 나온 경우: 난이도 화면부터 다시 (거기서 Back이면 이름 화면)
-        front_screens(skip_name=True)
+async def run():
+    await front_screens()
+    while True:
+        if await main() == "home":  # 일시정지 화면에서 홈으로 나온 경우: 난이도 화면부터 다시 (거기서 Back이면 이름 화면)
+            await front_screens(skip_name=True)
+
+
+asyncio.run(run())

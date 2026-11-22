@@ -39,3 +39,5 @@ Pygame 슈팅 게임. 단일 파일 `shooter.py`, 실행은 `python shooter.py`.
 화면 확인이 필요하면 임시 사본에서 `pygame.image.save(screen, ...)`로 캡처하고, 확률·조건은 임시 사본에서 상수를 바꿔 검증한다 (원본은 건드리지 않는다).
 실제 플레이 감각(난이도, 판정)은 사용자가 직접 확인해야 한다.
 - 순위표(`ranking_screen`)의 1~3위는 `assets/medal_{gold,silver,bronze}.png`(투명 PNG)를 `draw_medal()`이 그린다 (셋 다 같은 크기, 금메달만 빛줄기가 번쩍이며 지나간다 (`_medal_shine`), 4위부터는 같은 세로줄에 숫자). 파일이 없으면 도형으로 대신 그린다.
+- 웹 버전: 모든 화면 함수(`name_screen`, `splash_screen`, `controls_screen`, `title_screen`, `main`, `front_screens`, `records_screen`, `ranking_screen`)는 `async def`이고 프레임 끝에 `await asyncio.sleep(0)`이 있다 (pygbag 때문; 새 화면 루프도 똑같이 만들고 호출에 `await`을 붙인다). 시작은 `asyncio.run(run())`. `WEB`(= emscripten)이면 `scale = 1`, 글꼴은 `make_font()`가 기본 글꼴, ←/→/…/♥ 글자는 기본 글꼴에 없어서 `ARROW_L`/`ARROW_R`/`ELLIPSIS`/`render_hearts()`로 대신한다 (새 특수문자를 쓰면 웹에서 네모로 보인다). `build_web.py`가 `docs/`를 만든다 (GitHub Pages, 빌드 결과도 커밋한다).
+

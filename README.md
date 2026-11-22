@@ -135,3 +135,10 @@ python shooter.py
 - 효과음 / 배경음악, 이미지 스프라이트
 - 최고 점수 저장
 - 상점 물건 늘리기, 보너스 라운드를 코인 줍기 스테이지로 확장
+
+## 웹 버전 (브라우저에서 하기)
+
+- 주소: https://lhk3832.github.io/astroid/ (GitHub Pages가 `docs/` 폴더를 보여준다. 저장소 Settings → Pages에서 Branch `main`, 폴더 `/docs`로 한 번 켜야 한다)
+- 만들기: `python build_web.py` (pygbag이 필요하다: `pip install pygbag`). `shooter.py`와 `assets/`를 pygbag으로 빌드해서 `docs/`에 넣는다. 게임을 고친 뒤에는 다시 빌드해서 `docs/`까지 커밋해야 웹에도 반영된다.
+- 웹에서 다른 점: 글꼴이 pygame 기본 글꼴이고(한글 이름은 안 보일 수 있다), 최고 기록은 그 탭을 닫으면 사라진다 (파일에 저장하지 못한다). 처음 열 때 게임 엔진을 내려받느라 몇 초 걸린다.
+
