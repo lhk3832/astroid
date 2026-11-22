@@ -2,4 +2,3 @@ __pycache__/
 *.pyc
 .venv/
 best_score.txt
-server/config.php

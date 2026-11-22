@@ -275,10 +275,11 @@ def top_record(mode):
     return rankings[mode][0] if rankings[mode] else empty_record()
 
 
-# 공용 순위표 (웹 버전 전용): 내 호스팅(카페24 등)에 올린 server/scores.php에 점수를 보내고 순위를 불러온다.
-# SCORES_URL이 비어 있으면 꺼진다(웹도 그 브라우저에만 기록). 설정 방법은 README의 "공용 순위표" 참고.
-SCORES_URL = ""  # 예: "https://내도메인.com/astroid/scores.php"
-ONLINE = WEB and bool(SCORES_URL)
+# 공용 순위표 (웹 버전 전용): Supabase 표 scores에 점수를 보내고 불러온다. 아래 두 값이 비어 있으면 꺼진다(웹도 지금처럼 그 탭에서만 기록).
+# 주소와 anon(공개) 키는 코드에 넣어도 된다. 순위표 표는 읽기/추가만 허용하도록 만들어져 있다 (README의 "공용 순위표" 참고). service_role 키는 절대 넣지 않는다.
+SUPABASE_URL = ""  # 예: "https://abcdefgh.supabase.co"
+SUPABASE_KEY = ""  # anon(publishable) 키
+ONLINE = WEB and bool(SUPABASE_URL) and bool(SUPABASE_KEY)
 _online_frames = 0
 
 
@@ -293,18 +294,25 @@ def online_setup():
         return
     _js("""
     window.astroid_top = {}; window.astroid_post_state = "";
-    window.astroid_post = function(body){  // text/plain으로 보내면 브라우저가 사전 확인(preflight) 없이 바로 보낸다
-      fetch(%s, {method: "POST", headers: {"Content-Type": "text/plain"}, body: body})
+    window.astroid_hdr = function(){
+      var k = %s, h = {"apikey": k};
+      if (k.indexOf("eyJ") === 0) h["Authorization"] = "Bearer " + k;  // 예전 JWT 형식 키만 Authorization도 보낸다 (sb_publishable_ 키는 apikey만)
+      return h;
+    };
+    window.astroid_post = function(body){
+      var h = window.astroid_hdr(); h["Content-Type"] = "application/json"; h["Prefer"] = "return=minimal";
+      fetch(%s + "/rest/v1/scores", {method: "POST", headers: h, body: body})
         .then(function(r){ window.astroid_post_state = r.ok ? "ok" : "fail"; })
         .catch(function(){ window.astroid_post_state = "fail"; });
     };
     window.astroid_fetch = function(mode){
-      fetch(%s + "?mode=" + mode + "&limit=%d")
+      fetch(%s + "/rest/v1/scores?mode=eq." + mode + "&select=score,player,ship,level,play_time,created_at&order=score.desc,created_at.asc&limit=%d",
+            {headers: window.astroid_hdr()})
         .then(function(r){ return r.text(); })
         .then(function(t){ window.astroid_top[mode] = t; })
         .catch(function(){});
     };
-    """ % (json.dumps(SCORES_URL), json.dumps(SCORES_URL), RANK_SIZE))
+    """ % (json.dumps(SUPABASE_KEY), json.dumps(SUPABASE_URL), json.dumps(SUPABASE_URL), RANK_SIZE))
 
 
 def online_refresh():
